@@ -1,0 +1,7 @@
+AC_INIT(netlogind.c)
+AC_CONFIG_HEADER(config.h)
+AC_PROG_CC
+
+AC_CHECK_FUNCS([strlcpy])
+
+AC_OUTPUT(Makefile)

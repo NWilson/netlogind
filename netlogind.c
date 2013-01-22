@@ -30,12 +30,13 @@ extern char** environ;
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include <string.h>
 #include <signal.h>
 #include <errno.h>
 #include <assert.h>
 #include <limits.h>
 #include <termios.h>
+
+#include "util.h"
 
 int debug;
 int client_main();
@@ -241,10 +242,10 @@ int client_main()
         char* str = fgets(buf, sizeof(buf), stdin);
         tcsetattr(fileno(stdin), TCSAFLUSH, &attrs);
         if (!str && ferror(stdin)) fatal("User input read error");
-        if (!str) str = "\n";
+        if (!str) str = "";
         size_t len = strlen(str);
-        if (str[len-1] != '\n') fatal("User input too long");
-        str[len-1] = '\0';
+        if (len && str[len-1] != '\n') fatal("User input too long");
+        if (len) str[len-1] = '\0';
         write_reply(str);
       }
       break;

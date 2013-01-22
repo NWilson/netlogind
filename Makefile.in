@@ -1,0 +1,29 @@
+CC = @CC@
+CFLAGS = @CFLAGS@ -I.
+CCLD = $(CC)
+DEFS = @DEFS@
+LDFLAGS = @LDFLAGS@
+LIBS = @LIBS@
+
+all:: netlogind
+
+Makefile: Makefile.in
+	./config.status
+config.h: config.h.in
+	./config.status
+
+OBJS = util.o netlogind.o
+
+util.c: util.h
+util.h: config.h
+netlogind.c: util.h
+
+.c.o:
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+netlogind: $(OBJS)
+	rm -f netlogind
+	$(CCLD) $(CFLAGS) $(LDFLAGS) -L. -o $@ $(OBJS) $(LIBS)
+
+clean::
+	rm -f netlogind $(OBJS)
