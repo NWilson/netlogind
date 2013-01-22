@@ -114,6 +114,7 @@ int main(int argc, char** argv) {
       }
       break;
     }
+    sleep(1); // prevent fork-bomb
   }
   if (!debug) {
     setsid();
