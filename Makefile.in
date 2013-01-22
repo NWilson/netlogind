@@ -12,11 +12,13 @@ Makefile: Makefile.in
 config.h: config.h.in
 	./config.status
 
-OBJS = util.o netlogind.o
+OBJS = util.o netlogind.o net.o
 
 util.c: util.h
 util.h: config.h
-netlogind.c: util.h
+net.c: util.h net.h
+net.h:
+netlogind.c: util.h net.h
 
 .c.o:
 	$(CC) $(CFLAGS) -c -o $@ $<

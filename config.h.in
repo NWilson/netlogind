@@ -1,2 +1,7 @@
+/* Needed for getpwnam_r semantics */
+#ifdef __sun
+#define _POSIX_PTHREAD_SEMANTICS
+#endif
+
 /* Define as 1 if you have strlcpy */
 #define HAVE_STRLCPY 0

@@ -17,49 +17,33 @@
   SOFTWARE.
  */
 
-#include "util.h"
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <assert.h>
-#include <errno.h>
+#ifndef NET_H__
+#define NET_H__
 
-void fatal(const char* str, ...)
-{
-  va_list ap;
-  va_start(ap, str);
-  vfprintf(stderr, str, ap);
-  va_end(ap);
-  fputc('\n', stderr);
-  exit(1);
-}
+int is_un_connectable(const char* sock);
+int un_listen(const char* sock);
+int un_connect(const char* sock);
 
-void perror_fatal(const char* str)
-{
-  perror(str);
-  exit(1);
-}
+#define MSG_FINISH 1
+#define MSG_TEXT 2
+#define MSG_PROMPT 3
+#define MSG_REPLY 4
 
-#if !HAVE_STRLCPY
-size_t
-strlcpy(char * /*restrict*/ dst, const char * /*restrict*/ src,
-        size_t size)
-{
-  size_t len = strlen(src), cp_len = len > size-1 ? size-1 : len;
-  memcpy(dst, src, cp_len);
-  dst[cp_len] = '\0';
-  return len;
-}
-#endif
+/*
+ * Blindingly simple blocking, unbuffered network layer.
+ *
+ * The write_ functions return 0 on success.
+ * The read functions return -1 (int) or 0 (char*) or failure.
+ */
+int write_finish(int fd, int status);
+int write_text(int fd, char* str);
+int write_prompt(int fd, int echo);
+int write_reply(int fd, char* str);
+int write_str(int fd, char* str);
+int write_uint(int fd, int i);
+int read_msg_type(int fd);
+char* read_reply(int fd);
+char* read_str(int fd);
+int read_uint(int fd);
 
-#if !HAVE_SETENV
-int setenv(const char *name, const char *value, int overwrite)
-{
-  if (getenv(name) && !overwrite) return 0;
-  size_t len = strlen(name) + strlen(value) + 2;
-  char* str = malloc(len);
-  if (!str) { errno = ENOMEM; return -1; }
-  assert(sprintf(str, "%s=%s", name, value) == len-1);
-  return putenv(str) ? -1 : 0;
-}
 #endif

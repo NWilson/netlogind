@@ -17,11 +17,13 @@
   SOFTWARE.
  */
 
+#include "util.h"
+#include "net.h"
+
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/un.h>
-#include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <pwd.h>
 #include <grp.h>
@@ -30,38 +32,18 @@ extern char** environ;
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <string.h>
 #include <signal.h>
 #include <errno.h>
 #include <assert.h>
-#include <limits.h>
 #include <termios.h>
 
-#include "util.h"
-
-int debug;
-int client_main();
-void fatal(const char* str, ...);
-void perror_fatal(const char* str);
-void daemonize();
-int is_un_connectable(const char* sock);
-int un_listen(const char* sock);
+static int debug = 0, client = 0;
+static int client_main();
+static void daemonize();
 #define SOCK_NAME "/tmp/netlogind.sock"
-#define MSG_FINISH 1
-#define MSG_TEXT 2
-#define MSG_PROMPT 3
-#define MSG_REPLY 4
 
-int client_fd;
-void write_finish(int status); /* calls exit(1) if status>0 */
-void write_text(char* str);
-void write_prompt(int echo);
-void write_reply(char* str);
-void write_str(char* str);
-void write_int(int i);
-int read_msg_type();
-char* read_reply();
-char* read_str();
-int read_int();
+static int client_fd = -1;
 
 /*
  * This is a brain-dead simple example of how to start a process from a
@@ -79,9 +61,11 @@ int read_int();
  */
 
 int main(int argc, char** argv) {
-  int client = argc > 1 && !strcmp(argv[1], "-client");
-  debug = argc > 1 && !strcmp(argv[1], "-debug");
-  int err;
+  int rv, i;
+  for (i = 0; i < argc; ++i) {
+    if (!strcmp(argv[i], "-client")) client = 1;
+    if (!strcmp(argv[i], "-debug")) debug = 1;
+  }
 
   if (client) return client_main();
 
@@ -94,7 +78,7 @@ int main(int argc, char** argv) {
   if (!debug) daemonize();
   signal(SIGPIPE, SIG_IGN);
 
-  unlink(SOCK_NAME);
+  (void)unlink(SOCK_NAME);
   int listen_fd = un_listen(SOCK_NAME);
   if (listen_fd < 0) fatal("Could not listen");
 
@@ -103,60 +87,57 @@ int main(int argc, char** argv) {
     if (client_fd < 0 && errno == EINTR) continue;
     if (client_fd < 0) perror_fatal("accept()");
     if (debug) break;
-    err = fork();
-    if (err < 0) perror_fatal("fork()");
-    if (err == 0) break;
+    rv = fork();
+    if (rv < 0) perror_fatal("fork()");
+    if (rv == 0) break;
     /* parent: reap child and accept again */
-    int child = err;
+    int child = rv;
     while (1) {
       if (waitpid(child, 0, 0) < 0) {
         if (errno != EINTR) perror_fatal("waitpid()");
-        else continue;
-      }
-      break;
+      } else break;
     }
-    sleep(1); // prevent fork-bomb
+    sleep(1); /* prevent fork-bomb */
   }
   if (!debug) {
     setsid();
-    err = fork();
-    if (err < 0) perror_fatal("fork()");
-    if (err > 0) _exit(0);
+    rv = fork();
+    if (rv < 0) perror_fatal("fork()");
+    if (rv > 0) _exit(0);
   }
 
   /* child: a process spawned for each client connection */
   close(listen_fd);
 
-  write_text("Username: ");
-  write_prompt(1);
-  char* username = read_reply();
+  write_text(client_fd, "Username: ");
+  write_prompt(client_fd, 1);
+  char* username = read_reply(client_fd);
+  if (!username) fatal("No username returned");
   struct passwd pw, *pwp;
   char pw_buf[1024];
-  err = getpwnam_r(username, &pw, pw_buf, sizeof(pw_buf), &pwp);
+  rv = getpwnam_r(username, &pw, pw_buf, sizeof(pw_buf), &pwp);
   free(username);
   if (!pwp) {
-    if (!err) fprintf(stderr, "No matching passwd entry");
-    else { errno = err; perror("getpwnam"); }
-    write_finish(1);
+    if (!rv) fprintf(stderr, "No matching passwd entry\n");
+    else { errno = rv; perror("getpwnam()"); }
+    (void)write_finish(client_fd, 1);
+    exit(1);
   }
 
-  if (setgid(pw.pw_gid) < 0) {
-    perror("setgid()");
-    write_finish(1);
-  }
-  if (initgroups(pw.pw_name, pw.pw_gid) < 0) {
-    perror("initgroups()");
-    write_finish(1);
-  }
-  if (setuid(pw.pw_uid) < 0) {
-    perror("setuid()");
-    write_finish(1);
+  if (setgid(pw.pw_gid) < 0 ||
+      initgroups(pw.pw_name, pw.pw_gid) ||
+      setuid(pw.pw_uid) < 0)
+  {
+    perror("user id change");
+    (void)write_finish(client_fd, 1);
+    exit(1);
   }
 
   if (getuid() != pw.pw_uid || geteuid() != pw.pw_uid ||
       getgid() != pw.pw_gid || getegid() != pw.pw_gid) {
-    fprintf(stderr, "uid/gid not correctly set!");
-    write_finish(1);
+    fprintf(stderr, "uid/gid not correctly set!\n");
+    (void)write_finish(client_fd, 1);
+    exit(1);
   }
 
   char* path = strdup(getenv("PATH"));
@@ -168,30 +149,36 @@ int main(int argc, char** argv) {
 
   while(1) {
     while(1) {
-      err = waitpid(-1, 0, WNOHANG);
-      if (err == 0 || (err < 0 && errno == ECHILD)) break;
-      if (err < 0) { perror("waitpid()"); write_finish(1); }
+      rv = waitpid(-1, 0, WNOHANG);
+      if (rv == 0 || (rv < 0 && errno == ECHILD)) break;
+      if (rv < 0)
+      { perror("waitpid()"); (void)write_finish(client_fd, 1); exit(1); }
     }
-    write_text("Command: ");
-    write_prompt(1);
-    char* command = read_reply();
+    if (write_text(client_fd, "Command: ") < 0)
+      fatal("Unexpected disconnection");
+    if (write_prompt(client_fd, 1) < 0)
+      fatal("Unexpected disconnection");
+    char* command = read_reply(client_fd);
+    if (!command) fatal("Unexpected disconnection");
     if (!command[0]) break;
     printf("Running command \"%s\"\n", command);
     int err = fork();
-    if (err < 0) { perror("fork()"); write_finish(1); }
+    if (err < 0) { perror("fork()"); (void)write_finish(client_fd, 1); exit(1); }
     if (err) { free(command); continue; }
     close(client_fd);
+    signal(SIGPIPE, SIG_DFL);
     execlp(command, command, (char*)0);
     perror("execlp()");
+    _exit(1);
   }
 
-  write_finish(0);
+  (void)write_finish(client_fd, 0);
   close(client_fd);
 
   while(1) {
-    err = wait(0);
-    if (err < 0 && errno == ECHILD) break;
-    if (err < 0) perror_fatal("waitpid()");
+    rv = wait(0);
+    if (rv < 0 && errno == ECHILD) break;
+    if (rv < 0) perror_fatal("waitpid()");
   }
   return 0;
 }
@@ -207,23 +194,21 @@ int main(int argc, char** argv) {
  */
 int client_main()
 {
-  client_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (client_fd < 0) perror_fatal("socket()");
-  struct sockaddr_un addr;
-  addr.sun_family = AF_UNIX;
-  assert(strlcpy(addr.sun_path, SOCK_NAME, sizeof(addr.sun_path)) <
-           sizeof(addr.sun_path));
-  if (connect(client_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
-    perror_fatal("connect()");
+  client_fd = un_connect(SOCK_NAME);
  
   while(1) {
-    int msg = read_msg_type();
+    int msg = read_msg_type(client_fd);
     switch(msg) {
     case MSG_FINISH:
-      return read_int() ? 1 : 0;
+      {
+        int status = read_uint(client_fd);
+        if (status < 0) fatal("Unexpected disconnection");
+        return status ? 1 : 0;
+      }
     case MSG_TEXT:
       {
-        char* text = read_str();
+        char* text = read_str(client_fd);
+        if (!text) fatal("Unexpected disconnection");
         printf("%s", text);
         fflush(stdout);
         free(text);
@@ -231,7 +216,8 @@ int client_main()
       break;
     case MSG_PROMPT:
       {
-        int echo = read_int();
+        int echo = read_uint(client_fd);
+        if (echo < 0) fatal("Unexpected disconnection");
         struct termios attrs;
         tcgetattr(fileno(stdin), &attrs);
         tcflag_t orig = attrs.c_lflag;
@@ -244,33 +230,26 @@ int client_main()
         if (!str && ferror(stdin)) fatal("User input read error");
         if (!str) str = "";
         size_t len = strlen(str);
-        if (len && str[len-1] != '\n') fatal("User input too long");
+        if (len && str[len-1] != '\n') {
+          fprintf(stderr, "User input too long: truncating\n");
+          while(1) {
+            char buf[1024];
+            char* discard = fgets(buf, sizeof(buf), stdin);
+            if (!discard && ferror(stdin)) fatal("User input read error");
+            if (!discard) break;
+            if (discard[strlen(discard)-1] == '\n') break;
+          }
+        }
         if (len) str[len-1] = '\0';
-        write_reply(str);
+        if (write_reply(client_fd, str) < 0) fatal("Unexpected disconnection");
       }
       break;
     default:
-      fatal("bad message id %d");
+      fatal("Bad message id %d");
       break;
     }
   }
   return 0;
-}
-
-void fatal(const char* str, ...)
-{
-  va_list ap;
-  va_start(ap, str);
-  vfprintf(stderr, str, ap);
-  va_end(ap);
-  fputc('\n', stderr);
-  exit(1);
-}
-
-void perror_fatal(const char* str)
-{
-  perror(str);
-  exit(1);
 }
 
 void daemonize()
@@ -285,120 +264,3 @@ void daemonize()
   if (err < 0) perror_fatal("daemonize:fork2()");
   if (err > 0) _exit(0);
 }
-
-int is_un_connectable(const char* sock)
-{
-  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (fd < 0) perror_fatal("is_un_connectable:socket()");
-  struct sockaddr_un addr;
-  addr.sun_family = AF_UNIX;
-  assert(strlcpy(addr.sun_path, sock, sizeof(addr.sun_path)) <
-           sizeof(addr.sun_path));
-  int err = connect(fd, (struct sockaddr*)&addr, sizeof(addr));
-  close(fd);
-  if (err < 0) {
-    if (errno == ECONNREFUSED || errno == EDESTADDRREQ || errno == ENOENT)
-      return 0;
-    perror_fatal("is_un_connectable:connect()");
-  }
-  return 1;
-}
-
-int un_listen(const char* sock)
-{
-  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (fd < 0) perror_fatal("un_listen:socket()");
-  struct sockaddr_un addr;
-  addr.sun_family = AF_UNIX;
-  assert(strlcpy(addr.sun_path, sock, sizeof(addr.sun_path)) <
-           sizeof(addr.sun_path));
-  if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
-  { close(fd); perror("un_listen:bind()"); return -1; }
-  if (listen(fd, 5) < 0)
-  { close(fd); perror("un_listen:listen()"); return -1; }
-  if (chmod(sock, 0666) < 0)
-  { close(fd); perror("un_listen:chmod()"); return -1; }
-  return fd;
-}
-
-void readbuf_(void* buf_, int len)
-{
-  char* buf = (char*)buf_;
-  while(len) {
-    int err = read(client_fd, buf, len); 
-    if (err < 0 && errno == EINTR) continue;
-    if (err < 0) perror_fatal("read()");
-    if (err == 0) { printf("EOF\n"); break; }
-    len -= err;
-    buf += err;
-  }
-  if (len) fatal("incomplete read()");
-}
-
-void writebuf_(void* buf_, int len)
-{
-  char* buf = (char*)buf_;
-  while(len) {
-    int err = write(client_fd, buf, len);
-    if (err < 0 && errno == EINTR) continue;
-    if (err < 0) fatal("write()");
-    len -= err;
-    buf += err;
-  }
-}  
-
-void write_finish(int status)
-{
-  write_int(MSG_FINISH);
-  write_int(status);
-  if (status) exit(1);
-}
-void write_text(char* str)
-{
-  write_int(MSG_TEXT);
-  write_str(str);
-}
-void write_prompt(int echo)
-{
-  write_int(MSG_PROMPT);
-  write_int(echo);
-}
-void write_reply(char* str)
-{
-  write_int(MSG_REPLY);
-  write_str(str);
-}
-void write_str(char* str)
-{
-  size_t len = strlen(str);
-  if (len > INT_MAX) len = INT_MAX;
-  write_int((int)len);
-  writebuf_(str, (int)len);
-} 
-void write_int(int i)
-{
-  writebuf_(&i, sizeof(i));
-}
-int read_msg_type() { return read_int(); }
-char* read_reply()
-{
-  if (read_int() != MSG_REPLY) fatal("bad msg id");
-  return read_str();
-}
-char* read_str()
-{
-  int len = read_int();
-  char* buf = malloc(len+1);
-  if (!buf) fatal("malloc()");
-  buf[len] = '\0';
-  readbuf_(buf, len);
-  return buf;
-}
-int read_int()
-{
-  int i;
-  readbuf_(&i, sizeof(i));
-  return i;
-}
-
-
