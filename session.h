@@ -17,28 +17,13 @@
   SOFTWARE.
  */
 
-#ifndef UTIL_H__
-#define UTIL_H__
+#ifndef SESSION_H__
+#define SESSION_H__
 
-#include <config.h>
-#include <string.h>
+#include <unistd.h>
 
-extern int debug_;
-void debug(const char* str, ...);
-void fatal(const char* str, ...);
-void perror_fatal(const char* str);
-
-#if !HAVE_STRLCPY
-size_t strlcpy(char * /*restrict*/ dst, const char * /*restrict*/ src,
-               size_t size);
-#endif
-
-#if !HAVE_SETENV
-int setenv(const char *name, const char *value, int overwrite);
-#endif
-
-#if !HAVE_SETPROCTITLE
-void setproctitle(const char *fmt, ...);
-#endif
+extern pid_t session_pid;
+void session_cleanup();
 
 #endif
+

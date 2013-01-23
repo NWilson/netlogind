@@ -2,7 +2,7 @@ AC_INIT(netlogind.c)
 AC_CONFIG_HEADER(config.h)
 AC_PROG_CC
 
-AC_CHECK_FUNCS([strlcpy setenv])
+AC_CHECK_FUNCS([strlcpy setenv setproctitle])
 
 AC_CHECK_FUNC(socket, [],
  [AC_CHECK_LIB(socket,socket,

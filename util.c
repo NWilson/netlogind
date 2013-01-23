@@ -24,6 +24,18 @@
 #include <assert.h>
 #include <errno.h>
 
+int debug_ = 0;
+
+void debug(const char* str, ...)
+{
+  if (!debug_) return;
+  va_list ap;
+  va_start(ap, str);
+  vfprintf(stderr, str, ap);
+  va_end(ap);
+  fputc('\n', stderr);
+}
+
 void fatal(const char* str, ...)
 {
   va_list ap;
@@ -63,3 +75,8 @@ int setenv(const char *name, const char *value, int overwrite)
   return putenv(str) ? -1 : 0;
 }
 #endif
+
+#if !HAVE_SETPROCTITLE
+void setproctitle(const char* fmt, ...) { }
+#endif
+

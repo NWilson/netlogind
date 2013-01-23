@@ -17,28 +17,29 @@
   SOFTWARE.
  */
 
-#ifndef UTIL_H__
-#define UTIL_H__
+#include "session.h"
+#include "util.h"
 
-#include <config.h>
-#include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
-extern int debug_;
-void debug(const char* str, ...);
-void fatal(const char* str, ...);
-void perror_fatal(const char* str);
+#include <errno.h>
+#include <signal.h>
+#include <stdio.h>
 
-#if !HAVE_STRLCPY
-size_t strlcpy(char * /*restrict*/ dst, const char * /*restrict*/ src,
-               size_t size);
-#endif
+pid_t session_pid = -1; 
 
-#if !HAVE_SETENV
-int setenv(const char *name, const char *value, int overwrite);
-#endif
+void session_cleanup()
+{
+  int err, status;
+  if (session_pid < 0) return;
+  while ((err = waitpid(session_pid, &status, WNOHANG)) < 0 && errno == EINTR) ;
+  if (err < 0) perror("waitpid(session_pid)");
+  else if (err == 0) debug("Abandoned session child");
+  else if (WIFEXITED(status) && WEXITSTATUS(status))
+    fprintf(stderr, "Session child exited abnormally: code %d\n",
+                    WEXITSTATUS(status));
+  else if (WIFSIGNALED(status))
+    psignal(WTERMSIG(status), "Session child termined");
+}
 
-#if !HAVE_SETPROCTITLE
-void setproctitle(const char *fmt, ...);
-#endif
-
-#endif

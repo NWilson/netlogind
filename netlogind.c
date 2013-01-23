@@ -19,6 +19,8 @@
 
 #include "util.h"
 #include "net.h"
+#include "session.h"
+#include "os.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -38,12 +40,23 @@ extern char** environ;
 #include <assert.h>
 #include <termios.h>
 
-static int debug = 0, client = 0;
-static int client_main();
-static void daemonize();
 #define SOCK_NAME "/tmp/netlogind.sock"
 
+
 static int client_fd = -1;
+static void client_cleanup()
+{
+  if (client_fd < 0) return;
+  if (close(client_fd) < 0) perror("close(client_fd)");
+}
+
+static int client_main();
+static void daemonize();
+static void cleanup()
+{
+  client_cleanup();
+  session_cleanup();
+}
 
 /*
  * This is a brain-dead simple example of how to start a process from a
@@ -61,10 +74,10 @@ static int client_fd = -1;
  */
 
 int main(int argc, char** argv) {
-  int rv, i;
+  int rv, client = 0, i;
   for (i = 0; i < argc; ++i) {
     if (!strcmp(argv[i], "-client")) client = 1;
-    if (!strcmp(argv[i], "-debug")) debug = 1;
+    if (!strcmp(argv[i], "-debug")) debug_ = 1;
   }
 
   if (client) return client_main();
@@ -100,17 +113,19 @@ int main(int argc, char** argv) {
     sleep(1); /* prevent fork-bomb */
   }
   if (!debug) {
-    setsid();
+    if (setsid() < 0) perror_fatal("setsid(listener_child)");
+    daemon_post_fork();
     rv = fork();
     if (rv < 0) perror_fatal("fork()");
     if (rv > 0) _exit(0);
   }
 
   /* child: a process spawned for each client connection */
-  close(listen_fd);
+  if (close(listen_fd) < 0) perror("close(listen_fd)");
 
-  write_text(client_fd, "Username: ");
-  write_prompt(client_fd, 1);
+  if (write_text(client_fd, "Username: ") < 0 ||
+      write_prompt(client_fd, 1) < 0)
+    fatal("Unexpected disconnection");
   char* username = read_reply(client_fd);
   if (!username) fatal("No username returned");
   struct passwd pw, *pwp;
@@ -128,7 +143,7 @@ int main(int argc, char** argv) {
       initgroups(pw.pw_name, pw.pw_gid) ||
       setuid(pw.pw_uid) < 0)
   {
-    perror("user id change");
+    perror("user id change failed");
     (void)write_finish(client_fd, 1);
     exit(1);
   }
@@ -173,7 +188,7 @@ int main(int argc, char** argv) {
   }
 
   (void)write_finish(client_fd, 0);
-  close(client_fd);
+  cleanup();
 
   while(1) {
     rv = wait(0);
@@ -195,6 +210,7 @@ int main(int argc, char** argv) {
 int client_main()
 {
   client_fd = un_connect(SOCK_NAME);
+  if (client_fd < 0) fatal("Failed to connect to server");
  
   while(1) {
     int msg = read_msg_type(client_fd);
@@ -245,7 +261,7 @@ int client_main()
       }
       break;
     default:
-      fatal("Bad message id %d");
+      fatal("Bad message id %d", msg);
       break;
     }
   }
@@ -259,7 +275,7 @@ void daemonize()
   int err = fork();
   if (err < 0) perror_fatal("daemonize:fork()");
   if (err > 0) _exit(0);
-  setsid();
+  if (setsid() < 0) perror_fatal("daemonize:setsid()");
   err = fork();
   if (err < 0) perror_fatal("daemonize:fork2()");
   if (err > 0) _exit(0);

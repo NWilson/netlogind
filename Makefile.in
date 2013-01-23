@@ -12,13 +12,17 @@ Makefile: Makefile.in
 config.h: config.h.in
 	./config.status
 
-OBJS = util.o netlogind.o net.o
+OBJS = util.o net.o os.o session.o netlogind.o
 
 util.c: util.h
 util.h: config.h
 net.c: util.h net.h
 net.h:
-netlogind.c: util.h net.h
+os.c: os.h
+os.h:
+session.c: session.h
+session.h:
+netlogind.c: util.h net.h os.h session.h
 
 .c.o:
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -29,3 +33,6 @@ netlogind: $(OBJS)
 
 clean::
 	rm -f netlogind $(OBJS)
+
+config-clean:
+	rm -f config.status config.cache config.log

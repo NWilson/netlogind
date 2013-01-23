@@ -17,28 +17,12 @@
   SOFTWARE.
  */
 
-#ifndef UTIL_H__
-#define UTIL_H__
+#include "os.h"
 
-#include <config.h>
-#include <string.h>
-
-extern int debug_;
-void debug(const char* str, ...);
-void fatal(const char* str, ...);
-void perror_fatal(const char* str);
-
-#if !HAVE_STRLCPY
-size_t strlcpy(char * /*restrict*/ dst, const char * /*restrict*/ src,
-               size_t size);
+void daemon_post_fork()
+{
+#ifdef __sun
+  // TODO: launch fresh contract
 #endif
+}
 
-#if !HAVE_SETENV
-int setenv(const char *name, const char *value, int overwrite);
-#endif
-
-#if !HAVE_SETPROCTITLE
-void setproctitle(const char *fmt, ...);
-#endif
-
-#endif
