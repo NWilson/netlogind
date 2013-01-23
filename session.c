@@ -33,6 +33,7 @@ extern char** environ;
 
 pid_t session_pid = -1; 
 int session_fd = -1;
+static char* username = 0;
 #ifdef HAVE_PAM
 int perform_authentication = 1;
 #else
@@ -42,6 +43,7 @@ int perform_authentication = 0;
 void session_cleanup()
 {
   int err, status;
+  free(username);
   if (session_fd >= 0 && close(session_fd) < 0) perror("close(session_fd)");
   if (session_pid < 0) return;
   while ((err = waitpid(session_pid, &status, WNOHANG)) < 0 && errno == EINTR) ;
@@ -66,7 +68,8 @@ static void session_fatal(const char* fmt, ...)
 /* The protocol the main thread uses to talk to the session is
  * simple: TEXT is sent to the client, PROMPT is sent to the
  * client and REPLY sent back. The first FINISH marks the end of
- * authentication. If the status is 0, we enter the command loop
+ * authentication, at which point we send over the username in a
+ * TEXT message. If the status is 0, we enter the command loop
  * and again relay prompts to the client in the main thread. */
 int session_main()
 {
@@ -75,7 +78,7 @@ int session_main()
   if (write_text(session_fd, "Username: ") < 0 ||
       write_prompt(session_fd, 1) < 0)
     session_fatal("Unexpected disconnection");
-  char* username = read_reply(session_fd);
+  username = read_reply(session_fd);
   if (!username) session_fatal("No username returned");
 
   if (!perform_authentication) {
@@ -88,7 +91,6 @@ int session_main()
   struct passwd pw, *pwp;
   char pw_buf[1024];
   rv = getpwnam_r(username, &pw, pw_buf, sizeof(pw_buf), &pwp);
-  free(username);
   if (!pwp) {
     (void)write_finish(session_fd, 1);
     if (rv) { errno = rv; perror("getpwnam()"); }
@@ -96,7 +98,11 @@ int session_main()
                        "No matching passwd entry");
   }
 
-  if (write_finish(session_fd, 0) < 0)
+  /* XXX username was untrusted client input: reject it if it
+   *     doesn't match its strvis */
+
+  if (write_finish(session_fd, 0) < 0 ||
+      write_reply(session_fd, username) < 0)
     session_fatal("Unexpected disconnection");
 
   char* path = strdup(getenv("PATH"));

@@ -63,11 +63,14 @@ static void client_fatal(const char* fmt, ...)
   va_start(ap, fmt);
   vfatal(fmt, ap);
 }
+
+static char* daemon_username = 0;
 static void daemonize();
 static void daemon_cleanup()
 {
   client_fd_cleanup();
   session_cleanup();
+  free(daemon_username);
 }
 static void daemon_fatal(const char* fmt, ...)
 {
@@ -197,6 +200,11 @@ int main(int argc, char** argv) {
               write_text(client_fd, "Authentication failed\n") >=0)
             (void)write_finish(client_fd, status);
         }
+        if (!authenticated) {
+          daemon_username = read_reply(session_fd);
+          if (!daemon_username)
+            daemon_fatal("Unexpected disconnection");
+        }
         break;
       }
     case MSG_TEXT:
@@ -225,8 +233,17 @@ int main(int argc, char** argv) {
       daemon_fatal("Bad message id %d", msg);
       break;
     }
-    if (msg == MSG_FINISH && authenticated) break;
-    if (msg == MSG_FINISH) authenticated = 1;
+    if (msg == MSG_FINISH) {
+      if (authenticated) break;
+      authenticated = 1;
+
+      /* At this point, if we were doing the privsep design,
+       * we'd rejoin the [net] process, perform whatever action
+       * we were interested in staying root for, then drop
+       * our privileges. */
+      setproctitle("%s [net]", daemon_username);
+      debug("Session process running for \"%s\"", daemon_username);
+    }
   }
 
   (void)write_finish(client_fd, 0);
