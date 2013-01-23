@@ -22,10 +22,12 @@
 
 #include <config.h>
 #include <string.h>
+#include <stdarg.h>
 
 extern int debug_;
 void debug(const char* str, ...);
 void fatal(const char* str, ...);
+void vfatal(const char* str, va_list ap);
 void perror_fatal(const char* str);
 
 #if !HAVE_STRLCPY

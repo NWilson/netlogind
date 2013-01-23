@@ -44,18 +44,36 @@ extern char** environ;
 
 
 static int client_fd = -1;
-static void client_cleanup()
+static void client_fd_cleanup()
 {
   if (client_fd < 0) return;
   if (close(client_fd) < 0) perror("close(client_fd)");
 }
 
 static int client_main();
-static void daemonize();
-static void cleanup()
+static void client_cleanup()
+{
+  client_fd_cleanup();
+}
+static void client_fatal(const char* fmt, ...)
 {
   client_cleanup();
+  va_list ap;
+  va_start(ap, fmt);
+  vfatal(fmt, ap);
+}
+static void daemonize();
+static void daemon_cleanup()
+{
+  client_fd_cleanup();
   session_cleanup();
+}
+static void daemon_fatal(const char* fmt, ...)
+{
+  daemon_cleanup();
+  va_list ap;
+  va_start(ap, fmt);
+  vfatal(fmt, ap);
 }
 
 /*
@@ -80,6 +98,8 @@ int main(int argc, char** argv) {
     if (!strcmp(argv[i], "-debug")) debug_ = 1;
   }
 
+  signal(SIGPIPE, SIG_IGN);
+
   if (client) return client_main();
 
   if (getuid() != 0 || geteuid() != 0)
@@ -88,8 +108,7 @@ int main(int argc, char** argv) {
   if (is_un_connectable(SOCK_NAME))
     fatal("Daemon already running");
 
-  if (!debug) daemonize();
-  signal(SIGPIPE, SIG_IGN);
+  if (!debug_) daemonize();
 
   (void)unlink(SOCK_NAME);
   int listen_fd = un_listen(SOCK_NAME);
@@ -99,7 +118,8 @@ int main(int argc, char** argv) {
     client_fd = accept(listen_fd, 0, 0);
     if (client_fd < 0 && errno == EINTR) continue;
     if (client_fd < 0) perror_fatal("accept()");
-    if (debug) break;
+    if (debug_) break;
+    fflush(0);
     rv = fork();
     if (rv < 0) perror_fatal("fork()");
     if (rv == 0) break;
@@ -112,7 +132,7 @@ int main(int argc, char** argv) {
     }
     sleep(1); /* prevent fork-bomb */
   }
-  if (!debug) {
+  if (!debug_) {
     if (setsid() < 0) perror_fatal("setsid(listener_child)");
     daemon_post_fork();
     rv = fork();
@@ -121,22 +141,24 @@ int main(int argc, char** argv) {
   }
 
   /* child: a process spawned for each client connection */
+  setproctitle("[authenticating]");
+  debug("Client connected");
   if (close(listen_fd) < 0) perror("close(listen_fd)");
 
   if (write_text(client_fd, "Username: ") < 0 ||
       write_prompt(client_fd, 1) < 0)
-    fatal("Unexpected disconnection");
+    daemon_fatal("Unexpected disconnection");
   char* username = read_reply(client_fd);
-  if (!username) fatal("No username returned");
+  if (!username) daemon_fatal("No username returned");
   struct passwd pw, *pwp;
   char pw_buf[1024];
   rv = getpwnam_r(username, &pw, pw_buf, sizeof(pw_buf), &pwp);
   free(username);
   if (!pwp) {
-    if (!rv) fprintf(stderr, "No matching passwd entry\n");
-    else { errno = rv; perror("getpwnam()"); }
     (void)write_finish(client_fd, 1);
-    exit(1);
+    if (rv) { errno = rv; perror("getpwnam()"); }
+    daemon_fatal(rv ? "Fetching username failed" :
+                      "No matching passwd entry");
   }
 
   if (setgid(pw.pw_gid) < 0 ||
@@ -150,9 +172,8 @@ int main(int argc, char** argv) {
 
   if (getuid() != pw.pw_uid || geteuid() != pw.pw_uid ||
       getgid() != pw.pw_gid || getegid() != pw.pw_gid) {
-    fprintf(stderr, "uid/gid not correctly set!\n");
     (void)write_finish(client_fd, 1);
-    exit(1);
+    fatal("uid/gid not correctly set!");
   }
 
   char* path = strdup(getenv("PATH"));
@@ -170,13 +191,14 @@ int main(int argc, char** argv) {
       { perror("waitpid()"); (void)write_finish(client_fd, 1); exit(1); }
     }
     if (write_text(client_fd, "Command: ") < 0)
-      fatal("Unexpected disconnection");
+      daemon_fatal("Unexpected disconnection");
     if (write_prompt(client_fd, 1) < 0)
-      fatal("Unexpected disconnection");
+      daemon_fatal("Unexpected disconnection");
     char* command = read_reply(client_fd);
-    if (!command) fatal("Unexpected disconnection");
+    if (!command) daemon_fatal("Unexpected disconnection");
     if (!command[0]) break;
-    printf("Running command \"%s\"\n", command);
+    debug("Running command \"%s\"\n", command);
+    fflush(0);
     int err = fork();
     if (err < 0) { perror("fork()"); (void)write_finish(client_fd, 1); exit(1); }
     if (err) { free(command); continue; }
@@ -188,7 +210,7 @@ int main(int argc, char** argv) {
   }
 
   (void)write_finish(client_fd, 0);
-  cleanup();
+  daemon_cleanup();
 
   while(1) {
     rv = wait(0);
@@ -218,13 +240,13 @@ int client_main()
     case MSG_FINISH:
       {
         int status = read_uint(client_fd);
-        if (status < 0) fatal("Unexpected disconnection");
+        if (status < 0) client_fatal("Unexpected disconnection");
         return status ? 1 : 0;
       }
     case MSG_TEXT:
       {
         char* text = read_str(client_fd);
-        if (!text) fatal("Unexpected disconnection");
+        if (!text) client_fatal("Unexpected disconnection");
         printf("%s", text);
         fflush(stdout);
         free(text);
@@ -233,7 +255,7 @@ int client_main()
     case MSG_PROMPT:
       {
         int echo = read_uint(client_fd);
-        if (echo < 0) fatal("Unexpected disconnection");
+        if (echo < 0) client_fatal("Unexpected disconnection");
         struct termios attrs;
         tcgetattr(fileno(stdin), &attrs);
         tcflag_t orig = attrs.c_lflag;
@@ -257,14 +279,16 @@ int client_main()
           }
         }
         if (len) str[len-1] = '\0';
-        if (write_reply(client_fd, str) < 0) fatal("Unexpected disconnection");
+        if (write_reply(client_fd, str) < 0)
+          client_fatal("Unexpected disconnection");
       }
       break;
     default:
-      fatal("Bad message id %d", msg);
+      client_fatal("Bad message id %d", msg);
       break;
     }
   }
+  client_cleanup();
   return 0;
 }
 

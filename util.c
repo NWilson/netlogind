@@ -40,8 +40,12 @@ void fatal(const char* str, ...)
 {
   va_list ap;
   va_start(ap, str);
+  vfatal(str, ap);
+}
+
+void vfatal(const char* str, va_list ap)
+{
   vfprintf(stderr, str, ap);
-  va_end(ap);
   fputc('\n', stderr);
   exit(1);
 }
