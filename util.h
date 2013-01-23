@@ -23,12 +23,15 @@
 #include <config.h>
 #include <string.h>
 #include <stdarg.h>
+#include <pwd.h>
 
 extern int debug_;
 void debug(const char* str, ...);
 void fatal(const char* str, ...);
 void vfatal(const char* str, va_list ap);
 void perror_fatal(const char* str);
+
+void setpasswd(struct passwd* pwp);
 
 #if !HAVE_STRLCPY
 size_t strlcpy(char * /*restrict*/ dst, const char * /*restrict*/ src,

@@ -23,7 +23,10 @@
 #include <unistd.h>
 
 extern pid_t session_pid;
+extern int session_fd;
+extern int perform_authentication;
 void session_cleanup();
+int session_main();
 
 #endif
 

@@ -18,6 +18,12 @@
  */
 
 #include "util.h"
+
+#include <sys/types.h>
+#include <unistd.h>
+#include <pwd.h>
+#include <grp.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -54,6 +60,22 @@ void perror_fatal(const char* str)
 {
   perror(str);
   exit(1);
+}
+
+void setpasswd(struct passwd* pwp)
+{
+  if (setgid(pwp->pw_gid) < 0 ||
+      initgroups(pwp->pw_name, pwp->pw_gid) ||
+      setuid(pwp->pw_uid) < 0)
+  {
+    perror_fatal("user id change failed");
+  }
+
+  if (getuid() != pwp->pw_uid || geteuid() != pwp->pw_uid ||
+      getgid() != pwp->pw_gid || getegid() != pwp->pw_gid)
+  {
+    fatal("uid/gid not correctly set!");
+  }
 }
 
 #if !HAVE_STRLCPY

@@ -20,7 +20,7 @@ net.c: util.h net.h
 net.h:
 os.c: os.h
 os.h:
-session.c: session.h
+session.c: session.h config.h
 session.h:
 netlogind.c: util.h net.h os.h session.h
 

@@ -3,5 +3,15 @@
 #define _POSIX_PTHREAD_SEMANTICS
 #endif
 
+/* Define as 1 if you have chroot */
+#define HAVE_CHROOT 0
+
+/* Define as 1 if you have setenv */
+#define HAVE_SETENV 0
+
+/* Define as 1 if you have setproctitle */
+#define HAVE_SETPROCTITLE 0
+
 /* Define as 1 if you have strlcpy */
 #define HAVE_STRLCPY 0
+

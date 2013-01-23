@@ -17,6 +17,7 @@
   SOFTWARE.
  */
 
+#include "config.h"
 #include "util.h"
 #include "net.h"
 #include "session.h"
@@ -27,9 +28,6 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <pwd.h>
-#include <grp.h>
-extern char** environ;
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -41,6 +39,9 @@ extern char** environ;
 #include <termios.h>
 
 #define SOCK_NAME "/tmp/netlogind.sock"
+#ifdef HAVE_CHROOT
+#define CHROOT_DIR "/var/empty"
+#endif
 
 
 static int client_fd = -1;
@@ -96,6 +97,7 @@ int main(int argc, char** argv) {
   for (i = 0; i < argc; ++i) {
     if (!strcmp(argv[i], "-client")) client = 1;
     if (!strcmp(argv[i], "-debug")) debug_ = 1;
+    if (!strcmp(argv[i], "-noauth")) perform_authentication = 0;
   }
 
   signal(SIGPIPE, SIG_IGN);
@@ -145,78 +147,91 @@ int main(int argc, char** argv) {
   debug("Client connected");
   if (close(listen_fd) < 0) perror("close(listen_fd)");
 
-  if (write_text(client_fd, "Username: ") < 0 ||
-      write_prompt(client_fd, 1) < 0)
-    daemon_fatal("Unexpected disconnection");
-  char* username = read_reply(client_fd);
-  if (!username) daemon_fatal("No username returned");
+  fflush(0);
+  {
+    int fd[2];
+    if (socketpair(PF_UNIX, SOCK_STREAM, 0, fd) < 0)
+      perror_fatal("socketpair()");
+    rv = fork();
+    if (rv < 0) fatal("fork()");
+    if (rv == 0) {
+      session_fd = fd[0];
+      (void)close(fd[1]);
+      (void)close(client_fd);
+    } else {
+      session_fd = fd[1];
+      (void)close(fd[0]);
+    }
+  }
+  if (rv == 0) return session_main();
+  session_pid = rv;
+
+  /* If we need root or user privileges later, we could use
+   * privilege separation here, and drop root after
+   * authentication. */
+
   struct passwd pw, *pwp;
   char pw_buf[1024];
-  rv = getpwnam_r(username, &pw, pw_buf, sizeof(pw_buf), &pwp);
-  free(username);
+  rv = getpwnam_r("nobody", &pw, pw_buf, sizeof(pw_buf), &pwp);
   if (!pwp) {
-    (void)write_finish(client_fd, 1);
     if (rv) { errno = rv; perror("getpwnam()"); }
-    daemon_fatal(rv ? "Fetching username failed" :
-                      "No matching passwd entry");
+    debug("Warning: not dropping privileges");
+  } else {
+#if HAVE_CHROOT
+    if (chroot(CHROOT_DIR) < 0) perror("chroot()");
+#endif
+    setpasswd(pwp);
   }
 
-  if (setgid(pw.pw_gid) < 0 ||
-      initgroups(pw.pw_name, pw.pw_gid) ||
-      setuid(pw.pw_uid) < 0)
-  {
-    perror("user id change failed");
-    (void)write_finish(client_fd, 1);
-    exit(1);
-  }
-
-  if (getuid() != pw.pw_uid || geteuid() != pw.pw_uid ||
-      getgid() != pw.pw_gid || getegid() != pw.pw_gid) {
-    (void)write_finish(client_fd, 1);
-    fatal("uid/gid not correctly set!");
-  }
-
-  char* path = strdup(getenv("PATH"));
-  *environ = 0;
-  setenv("HOME",pw.pw_dir,1);
-  setenv("USER",pw.pw_name,1);
-  setenv("PATH",path,1);
-  free(path);
-
+  /* Main loop: session-driven */
+  int authenticated = 0;
   while(1) {
-    while(1) {
-      rv = waitpid(-1, 0, WNOHANG);
-      if (rv == 0 || (rv < 0 && errno == ECHILD)) break;
-      if (rv < 0)
-      { perror("waitpid()"); (void)write_finish(client_fd, 1); exit(1); }
+    int msg = read_msg_type(session_fd);
+    switch(msg) {
+    case MSG_FINISH:
+      {
+        int status = read_uint(session_fd);
+        if (status < 0) daemon_fatal("Unexpected disconnection");
+        if (authenticated || status) {
+          if (authenticated ||
+              write_text(client_fd, "Authentication failed\n") >=0)
+            (void)write_finish(client_fd, status);
+        }
+        break;
+      }
+    case MSG_TEXT:
+      {
+        char* text = read_str(session_fd);
+        if (!text) daemon_fatal("Unexpected disconnection");
+        rv = write_text(client_fd, text);
+        free(text);
+        if (rv < 0) daemon_fatal("Unexpected disconnection");
+      }
+      break;
+    case MSG_PROMPT:
+      {
+        int echo = read_uint(session_fd);
+        if (echo < 0) daemon_fatal("Unexpected disconnection");
+        if (write_prompt(client_fd, echo) < 0)
+          daemon_fatal("Unexpected disconnection");
+        char* reply = read_reply(client_fd);
+        if (!reply) daemon_fatal("Unexpected disconnection");
+        rv = write_reply(session_fd, reply);
+        free(reply);
+        if (rv < 0) daemon_fatal("Unexpcted disconnection"); 
+      }
+      break;
+    default:
+      daemon_fatal("Bad message id %d", msg);
+      break;
     }
-    if (write_text(client_fd, "Command: ") < 0)
-      daemon_fatal("Unexpected disconnection");
-    if (write_prompt(client_fd, 1) < 0)
-      daemon_fatal("Unexpected disconnection");
-    char* command = read_reply(client_fd);
-    if (!command) daemon_fatal("Unexpected disconnection");
-    if (!command[0]) break;
-    debug("Running command \"%s\"\n", command);
-    fflush(0);
-    int err = fork();
-    if (err < 0) { perror("fork()"); (void)write_finish(client_fd, 1); exit(1); }
-    if (err) { free(command); continue; }
-    close(client_fd);
-    signal(SIGPIPE, SIG_DFL);
-    execlp(command, command, (char*)0);
-    perror("execlp()");
-    _exit(1);
+    if (msg == MSG_FINISH && authenticated) break;
+    if (msg == MSG_FINISH) authenticated = 1;
   }
 
   (void)write_finish(client_fd, 0);
   daemon_cleanup();
 
-  while(1) {
-    rv = wait(0);
-    if (rv < 0 && errno == ECHILD) break;
-    if (rv < 0) perror_fatal("waitpid()");
-  }
   return 0;
 }
 
