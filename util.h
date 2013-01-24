@@ -46,4 +46,8 @@ int setenv(const char *name, const char *value, int overwrite);
 void setproctitle(const char *fmt, ...);
 #endif
 
+#if !HAVE_CLOSEFROM
+void closefrom(int lowfd);
+#endif
+
 #endif

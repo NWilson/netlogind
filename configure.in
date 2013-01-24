@@ -2,7 +2,8 @@ AC_INIT(netlogind.c)
 AC_CONFIG_HEADER(config.h)
 AC_PROG_CC
 
-AC_CHECK_FUNCS([chroot setenv setproctitle strlcpy])
+AC_CHECK_FUNCS([chroot closefrom pstat_getproc setaudit_addr\
+                setenv setpcred setproctitle strlcpy usrinfo])
 
 AC_CHECK_FUNC(socket, [],
  [AC_CHECK_LIB(socket,socket,

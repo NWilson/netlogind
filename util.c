@@ -103,6 +103,30 @@ int setenv(const char *name, const char *value, int overwrite)
 #endif
 
 #if !HAVE_SETPROCTITLE
+// No point emulating; it's just cosmetic
 void setproctitle(const char* fmt, ...) { }
+#endif
+
+#if !HAVE_CLOSEFROM
+// see http://stackoverflow.com/questions/899038/
+void closefrom(int lowfd)
+{
+#ifdef F_CLOSEM
+  // AIX
+  (void)fcntl(lowfd, FCLOSEM, 0);
+
+#elif defined(HAVE_PSTAT_GETPROC)
+  // HP-UX
+  struct pst_status ps;
+  if (pstat_getproc(&ps, sizeof(ps), (size_t)0, (int)getpid()) < 0)
+    perror("pstat_getproc()");
+  int i = lowfd;
+  for (; i <= ps.pst_highestfd; ++i) (void)close(i);
+#else
+
+  // TODO total blinking pain...
+
+#endif
+}
 #endif
 

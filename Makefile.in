@@ -12,6 +12,7 @@ Makefile: Makefile.in
 config.h: config.h.in
 	./config.status
 
+# util,net < os < session,netlogind
 OBJS = util.o net.o os.o session.o netlogind.o
 
 util.c: util.h

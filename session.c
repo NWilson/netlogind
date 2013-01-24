@@ -17,10 +17,11 @@
   SOFTWARE.
  */
 
+#include <config.h>
 #include "session.h"
-#include "config.h"
 #include "util.h"
 #include "net.h"
+#include "os.h"
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -36,6 +37,7 @@ int session_fd = -1;
 static char* username = 0;
 #ifdef HAVE_PAM
 int perform_authentication = 1;
+#define PAM_APPL_NAME "netlogind"
 #else
 int perform_authentication = 0;
 #endif
@@ -65,6 +67,18 @@ static void session_fatal(const char* fmt, ...)
   vfatal(fmt, ap);
 }
 
+static void session_environ()
+{
+  char* path = strdup(getenv("PATH"));
+  *environ = 0;
+  setenv("HOME",pw.pw_dir,1);
+  setenv("USER",pw.pw_name,1);
+  setenv("PATH",path,1);
+  free(path);
+#ifdef HAVE_PAM
+#endif
+}
+
 /* The protocol the main thread uses to talk to the session is
  * simple: TEXT is sent to the client, PROMPT is sent to the
  * client and REPLY sent back. The first FINISH marks the end of
@@ -85,7 +99,11 @@ int session_main()
     if (write_text(session_fd, "Skipping authentication\n") < 0)
       session_fatal("Unexpected disconnection");
   } else {
+#ifdef HAVE_PAM
     // TODO perform authentication
+#else
+    assert(0);
+#endif
   }
 
   struct passwd pw, *pwp;
@@ -101,17 +119,19 @@ int session_main()
   /* XXX username was untrusted client input: reject it if it
    *     doesn't match its strvis */
 
+  setproctitle("%s [session]", username);
   if (write_finish(session_fd, 0) < 0 ||
       write_reply(session_fd, username) < 0)
     session_fatal("Unexpected disconnection");
+  
+  os_session_post_auth(username, pw.pw_uid);
 
-  char* path = strdup(getenv("PATH"));
-  *environ = 0;
-  setenv("HOME",pw.pw_dir,1);
-  setenv("USER",pw.pw_name,1);
-  setenv("PATH",path,1);
-  free(path);
+  // setgid and check; initgroups
+#ifdef HAVE_PAM
+  // open_session
+#endif
 
+  // setreuid(pw.pw_uid, -1);
   while(1) {
     while(1) {
       rv = waitpid(-1, 0, WNOHANG);
@@ -138,12 +158,21 @@ int session_main()
       session_fatal(0);
     }
     if (err) { free(command); continue; }
-    close(session_fd);
+
+    (void)close(session_fd);
+    closefrom(3);
     signal(SIGPIPE, SIG_DFL);
+
+    // setreuid(0, -1);
+    // setuid(pw.pw_uid), and check
+
+    session_environ();
+
     execlp(command, command, (char*)0);
     perror("execlp()");
     _exit(1);
   }
+  // setreuid(0, -1);
 
   (void)write_finish(session_fd, 0);
 

@@ -6,12 +6,27 @@
 /* Define as 1 if you have chroot */
 #define HAVE_CHROOT 0
 
+/* Define as 1 if you have closefrom */
+#define HAVE_CLOSEFROM 0
+
+/* Define as 1 if you have pstat_getproc */
+#define HAVE_PSTAT_GETPROC 0
+
+/* Define as 1 if you have setaudit_addr */
+#define HAVE_SETAUDIT_ADDR 0
+
 /* Define as 1 if you have setenv */
 #define HAVE_SETENV 0
+
+/* Define as 1 if you have setpcred */
+#define HAVE_SETPCRED 0
 
 /* Define as 1 if you have setproctitle */
 #define HAVE_SETPROCTITLE 0
 
 /* Define as 1 if you have strlcpy */
 #define HAVE_STRLCPY 0
+
+/* Define as 1 if you have usrinfo */
+#define HAVE_USRINFO 0
 

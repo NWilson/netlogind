@@ -20,6 +20,9 @@
 #ifndef OS_H__
 #define OS_H__
 
-void daemon_post_fork();
+#include <unistd.h>
+
+void os_daemon_post_fork();
+void os_session_post_auth(const char* username, uid_t uid);
 
 #endif

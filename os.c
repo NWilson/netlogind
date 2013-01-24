@@ -17,12 +17,66 @@
   SOFTWARE.
  */
 
+#include <config.h>
 #include "os.h"
 
-void daemon_post_fork()
+void os_daemon_post_fork()
 {
 #ifdef __sun
   // TODO: launch fresh contract
+#endif
+}
+
+void os_session_post_auth(const char* username, uid_t uid)
+{
+  // FreeBSD, MacOS X
+#if HAVE_SETLOGIN
+  if (setlogin(username) < 0) perror("setlogin()");
+#endif
+
+  // AIX
+#if HAVE_USRINFO
+  size_t len = strlen(username);
+  const char fmt[] = "LOGIN=%s\0LOGNAME=%s\0NAME=%s\0";
+  len = sizeof(fmt)-6 + 3*len;
+  char* buf = malloc(len);
+  if (buf) {
+    sprintf(buf, fmt, username, username, username);
+    if (usrinfo(SETUINFO, buf, len) < 0) perror("usrinfo(SETUINFO)");
+    free(buf);
+  }
+#endif
+#if HAVE_SETPCRED
+  if (setpcred(username, 0) < 0) perror("setpcred()");
+#endif
+
+  // Linux
+#ifdef __linux
+  // This is ultra-simplistic. Admins who really care about setting the
+  // loginuid should use pam_loginuid, which is more sophisticated in its
+  // handling and communication with auditd. We set it here though, because
+  // it is after all a uid for our process that the kernel tracks, so it's
+  // not optional.
+  FILE* f = fopen("/proc/self/loginuid", "r+");
+  if (f) {
+    if (ftruncate(fileno(f), 0) < 0) perror("ftruncate(/proc/self/loginuid)");
+    else fprintf(f, "%lu", (unsigned long)uid);
+    fclose(f);
+  } else {
+    debug("No /proc/self/loginuid");
+  }
+#endif
+
+  // Solaris, MacOS X, FreeBSD
+#if HAVE_SETAUDIT_ADDR
+  // TODO finish
+  /*
+  auditinfo_addr_t ai;
+  ai.ai_auid = uid;
+  ai.ai_asid = AU_ASSIGN_ASID;
+  mask = au_user_mask...
+  setaudit_addr
+  */
 #endif
 }
 

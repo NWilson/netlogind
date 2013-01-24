@@ -139,7 +139,7 @@ int main(int argc, char** argv) {
   }
   if (!debug_) {
     if (setsid() < 0) perror_fatal("setsid(listener_child)");
-    daemon_post_fork();
+    os_daemon_post_fork();
     rv = fork();
     if (rv < 0) perror_fatal("fork()");
     if (rv > 0) _exit(0);
