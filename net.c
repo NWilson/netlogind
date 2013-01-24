@@ -32,7 +32,7 @@
 #include <errno.h>
 #include <limits.h>
 
-/* This works on every modern platform. */
+/* An int has the right width on every modern platform. */
 typedef unsigned int uint32_net;
 typedef char static_assert1[sizeof(uint32_net)*2 - 7];
 typedef char static_assert2[9 - sizeof(uint32_net)*2];
@@ -96,7 +96,10 @@ static int readbuf_(int fd, void* buf_, int len)
     len -= err;
     buf += err;
   }
-  if (len) { fprintf(stderr, "incomplete readbuf()\n"); return -1; }
+  if (len) {
+    fprintf(stderr, "incomplete readbuf()\n");
+    return -1;
+  }
   return 0;
 }
 

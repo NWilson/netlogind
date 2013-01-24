@@ -2,11 +2,43 @@ AC_INIT(netlogind.c)
 AC_CONFIG_HEADER(config.h)
 AC_PROG_CC
 
-AC_CHECK_FUNCS([chroot closefrom pstat_getproc setaudit_addr\
-                setenv setpcred setproctitle strlcpy usrinfo])
+AC_CHECK_FUNCS([chroot closefrom pstat_getproc setenv setpcred\
+                setproctitle setreuid setresuid strlcpy usrinfo])
+                
+dnl XXX setpcred is in usersec.h, usrinfo is in uinfo.h; check them separately?
+
+
+AC_CHECK_HEADERS([pam/pam_appl.h security/pam_appl.h])
+AC_CHECK_LIB(pam, pam_start,
+ [LIBS="$LIBS -lpam"
+  AC_DEFINE(HAVE_PAM)])
+
+AC_CHECK_HEADERS([bsm/audit.h],
+ [AC_CHECK_FUNC(setaudit_addr, [],
+  [AC_CHECK_LIB(bsm, setaudit_addr, LIBS="$LIBS -lbsm -lsocket -lnsl -lintl",
+                [], [-lsocket -lnsl -lintl])])])
+AC_CHECK_HEADERS([bsm/libbsm.h],
+ [AC_CHECK_FUNC(au_user_mask, [],
+  [AC_CHECK_LIB(bsm, au_user_mask)])])
 
 AC_CHECK_FUNC(socket, [],
- [AC_CHECK_LIB(socket,socket,
-      LIBS="$LIBS -lsocket")])
+ [AC_CHECK_LIB(socket,socket, LIBS="$LIBS -lsocket")])
+
+AC_CACHE_CHECK("for getpwnam_r define", nld_cv_getpwnam_args,
+ [AC_TRY_COMPILE([#include <pwd.h>],
+  [struct passwd pw, *pwp; char buf[1024];
+   getpwnam_r("", &pw, buf, sizeof(buf), &pwp);],
+  nld_cv_getpwnam_args=none,
+  [AC_TRY_COMPILE([#define _POSIX_PTHREAD_SEMANTICS
+                   #include <pwd.h>],
+   [struct passwd pw, *pwp; char buf[1024];
+    getpwnam_r("", &pw, buf, sizeof(buf), &pwp);],
+   [nld_cv_getpwnam_args=_POSIX_PTHREAD_SEMANTICS],
+   [nld_cv_getpwnam_args=error])])])
+if test $nld_cv_getpwnam_args = error; then
+  AC_MSG_ERROR("No suitable getpwnam_r found")
+elif test $nld_cv_getpwnam_args '!=' none; then
+  AC_DEFINE_UNQUOTED(${nld_cv_getpwnam_args})
+fi
 
 AC_OUTPUT(Makefile)

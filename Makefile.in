@@ -1,7 +1,6 @@
 CC = @CC@
 CFLAGS = @CFLAGS@ -I.
 CCLD = $(CC)
-DEFS = @DEFS@
 LDFLAGS = @LDFLAGS@
 LIBS = @LIBS@
 
@@ -12,8 +11,8 @@ Makefile: Makefile.in
 config.h: config.h.in
 	./config.status
 
-# util,net < os < session,netlogind
-OBJS = util.o net.o os.o session.o netlogind.o
+# util,net < os,pam < session,netlogind
+OBJS = util.o net.o os.o pam.o session.o netlogind.o
 
 util.c: util.h
 util.h: config.h

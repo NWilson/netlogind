@@ -78,6 +78,12 @@ void setpasswd(struct passwd* pwp)
   }
 }
 
+void buffer_scrub(void* buf_, size_t len)
+{
+  volatile char* buf = buf_;
+  while (len--) *buf++ = '\0';
+}
+
 #if !HAVE_STRLCPY
 size_t
 strlcpy(char * /*restrict*/ dst, const char * /*restrict*/ src,
@@ -107,6 +113,18 @@ int setenv(const char *name, const char *value, int overwrite)
 void setproctitle(const char* fmt, ...) { }
 #endif
 
+#if !HAVE_SETREUID
+int setreuid(uid_t ruid, uid_t euid)
+{
+#if HAVE_SETRESUID
+  return setresuid(ruid, euid, -1);
+#else
+  errno = ENOTSUP;
+  return;
+#endif
+}
+#endif
+
 #if !HAVE_CLOSEFROM
 // see http://stackoverflow.com/questions/899038/
 void closefrom(int lowfd)
@@ -115,7 +133,7 @@ void closefrom(int lowfd)
   // AIX
   (void)fcntl(lowfd, FCLOSEM, 0);
 
-#elif defined(HAVE_PSTAT_GETPROC)
+#elif HAVE_PSTAT_GETPROC
   // HP-UX
   struct pst_status ps;
   if (pstat_getproc(&ps, sizeof(ps), (size_t)0, (int)getpid()) < 0)

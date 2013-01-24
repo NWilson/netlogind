@@ -19,6 +19,17 @@
 
 #include <config.h>
 #include "os.h"
+#include "util.h"
+
+#if HAVE_BSM_AUDIT_H
+#include <unistd.h>
+#include <bsm/audit.h>
+#endif
+#if HAVE_BSM_LIBBSM_H
+#include <bsm/libbsm.h>
+#endif
+
+#include <stdio.h>
 
 void os_daemon_post_fork()
 {
@@ -27,7 +38,7 @@ void os_daemon_post_fork()
 #endif
 }
 
-void os_session_post_auth(const char* username, uid_t uid)
+void os_session_post_auth(char* username, uid_t uid)
 {
   // FreeBSD, MacOS X
 #if HAVE_SETLOGIN
@@ -54,9 +65,9 @@ void os_session_post_auth(const char* username, uid_t uid)
 #ifdef __linux
   // This is ultra-simplistic. Admins who really care about setting the
   // loginuid should use pam_loginuid, which is more sophisticated in its
-  // handling and communication with auditd. We set it here though, because
-  // it is after all a uid for our process that the kernel tracks, so it's
-  // not optional.
+  // handling and communication with auditd. We have to set it here though,
+  // because it's our responsibility to try to correctly set every user-id the
+  // kernel has on us.
   FILE* f = fopen("/proc/self/loginuid", "r+");
   if (f) {
     if (ftruncate(fileno(f), 0) < 0) perror("ftruncate(/proc/self/loginuid)");
@@ -68,15 +79,32 @@ void os_session_post_auth(const char* username, uid_t uid)
 #endif
 
   // Solaris, MacOS X, FreeBSD
-#if HAVE_SETAUDIT_ADDR
-  // TODO finish
-  /*
-  auditinfo_addr_t ai;
+#if HAVE_BSM_AUDIT_H
+  auditinfo_addr_t ai = {0,};
+
+  // Solaris BSM doesn't have ai_flags, but OpenBSM does. We are just
+  // making sure that if there are fields in the ai structure we don't
+  // know about, we leave them at their current value.
+  if (getaudit_addr(&ai, sizeof(ai)) < 0)
+    perror("getaudit_addr()");
   ai.ai_auid = uid;
+#ifdef AU_ASSIGN_ASID
   ai.ai_asid = AU_ASSIGN_ASID;
-  mask = au_user_mask...
-  setaudit_addr
-  */
+#else
+  ai.ai_asid = getsid(0);
+#endif
+
+  // This API is rubbish. It assumes a session represents a connection from
+  // one location; what if two users are cooperating? Stupid API. Don't
+  // use this field for anything if you're not telnet or sim.
+  au_tid_addr_t termid = {0,};
+  ai.ai_termid = termid;
+  ai.ai_termid.at_type = AU_IPv4;
+
+  if (au_user_mask(username, &ai.ai_mask) < 0)
+    perror("au_user_mask()");
+  else if (setaudit_addr(&ai, sizeof(ai)) < 0)
+    perror("setaudit_addr()");
 #endif
 }
 

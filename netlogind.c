@@ -39,7 +39,7 @@
 #include <termios.h>
 
 #define SOCK_NAME "/tmp/netlogind.sock"
-#ifdef HAVE_CHROOT
+#if HAVE_CHROOT
 #define CHROOT_DIR "/var/empty"
 #endif
 
@@ -200,6 +200,7 @@ int main(int argc, char** argv) {
               write_text(client_fd, "Authentication failed\n") >=0)
             (void)write_finish(client_fd, status);
         }
+        if (status) authenticated = 1;
         if (!authenticated) {
           daemon_username = read_reply(session_fd);
           if (!daemon_username)
@@ -297,6 +298,7 @@ int client_main()
         char buf[1024];
         char* str = fgets(buf, sizeof(buf), stdin);
         tcsetattr(fileno(stdin), TCSAFLUSH, &attrs);
+        if (!echo) fputc('\n', stdout);
         if (!str && ferror(stdin)) fatal("User input read error");
         if (!str) str = "";
         size_t len = strlen(str);

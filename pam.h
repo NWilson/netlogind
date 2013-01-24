@@ -17,43 +17,18 @@
   SOFTWARE.
  */
 
-#ifndef UTIL_H__
-#define UTIL_H__
+#ifndef PAM_H__
+#define PAM_H__
 
 #include <config.h>
-#include <string.h>
-#include <stdarg.h>
-#include <pwd.h>
 
-extern int debug_;
-void debug(const char* str, ...);
-void fatal(const char* str, ...);
-void vfatal(const char* str, va_list ap);
-void perror_fatal(const char* str);
+#if HAVE_PAM
+#define PAM_APPL_NAME "netlogind"
 
-void setpasswd(struct passwd* pwp);
-
-void buffer_scrub(void*, size_t len);
-
-#if !HAVE_STRLCPY
-size_t strlcpy(char * /*restrict*/ dst, const char * /*restrict*/ src,
-               size_t size);
-#endif
-
-#if !HAVE_SETENV
-int setenv(const char *name, const char *value, int overwrite);
-#endif
-
-#if !HAVE_SETPROCTITLE
-void setproctitle(const char *fmt, ...);
-#endif
-
-#if !HAVE_SETREUID
-int setreuid(uid_t ruid, uid_t euid);
-#endif
-
-#if !HAVE_CLOSEFROM
-void closefrom(int lowfd);
+int pam_authenticate_session(char** username, int fd);
+int pam_begin_session(const char* username);
+void pam_export_environ();
+void pam_cleanup();
 #endif
 
 #endif

@@ -1,7 +1,20 @@
 /* Needed for getpwnam_r semantics */
-#ifdef __sun
-#define _POSIX_PTHREAD_SEMANTICS
-#endif
+#undef _POSIX_PTHREAD_SEMANTICS
+
+/* Define as 1 if you have <bsm/audit.h> */
+#define HAVE_BSM_AUDIT_H 0
+
+/* Define as 1 if you have <bsm/libbsm.h> */
+#define HAVE_BSM_LIBBSM_H 0
+
+/* Define as 1 if you have <pam/pam_appl.h> */
+#define HAVE_PAM_PAM_APPL_H 0
+
+/* Define as 1 if you have <security/pam_appl.h> */
+#define HAVE_SECURITY_PAM_APPL_H 0
+
+/* Define as 1 if we are using PAM */
+#define HAVE_PAM 0
 
 /* Define as 1 if you have chroot */
 #define HAVE_CHROOT 0
@@ -12,9 +25,6 @@
 /* Define as 1 if you have pstat_getproc */
 #define HAVE_PSTAT_GETPROC 0
 
-/* Define as 1 if you have setaudit_addr */
-#define HAVE_SETAUDIT_ADDR 0
-
 /* Define as 1 if you have setenv */
 #define HAVE_SETENV 0
 
@@ -24,9 +34,14 @@
 /* Define as 1 if you have setproctitle */
 #define HAVE_SETPROCTITLE 0
 
+/* Define as 1 if you have setreuid */
+#define HAVE_SETREUID 0
+
+/* Define as 1 if you have setresuid */
+#define HAVE_SETRESUID 0
+
 /* Define as 1 if you have strlcpy */
 #define HAVE_STRLCPY 0
 
 /* Define as 1 if you have usrinfo */
 #define HAVE_USRINFO 0
-
