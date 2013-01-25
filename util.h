@@ -35,6 +35,10 @@ void setpasswd(struct passwd* pwp);
 
 void buffer_scrub(void*, size_t len);
 
+#if !HAVE_PSIGNAL
+void psignal(int sig, const char *s);
+#endif
+
 #if !HAVE_STRLCPY
 size_t strlcpy(char * /*restrict*/ dst, const char * /*restrict*/ src,
                size_t size);

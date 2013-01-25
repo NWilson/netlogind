@@ -1,3 +1,9 @@
+/* Massively easier than writing autoconf to discover we need this for the
+ * right semantics. */
+#ifdef __hpux
+#define _POSIX_C_SOURCE 199506
+#endif
+
 /* Needed for getpwnam_r semantics */
 #undef _POSIX_PTHREAD_SEMANTICS
 
@@ -15,6 +21,9 @@
 
 /* Define as 1 if we are using PAM */
 #define HAVE_PAM 0
+
+/* Define as 1 if you have pam_getenvlist */
+#define HAVE_PAM_GETENVLIST 0
 
 /* Define as 1 if you have chroot */
 #define HAVE_CHROOT 0

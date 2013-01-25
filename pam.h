@@ -23,12 +23,13 @@
 #include <config.h>
 
 #if HAVE_PAM
+#include <unistd.h>
 #define PAM_APPL_NAME "netlogind"
 
 int pam_authenticate_session(char** username, int fd);
-int pam_begin_session(const char* username);
+int pam_begin_session(const char* username, int fd);
 void pam_export_environ();
-void pam_cleanup();
+void pam_cleanup(uid_t uid);
 #endif
 
 #endif

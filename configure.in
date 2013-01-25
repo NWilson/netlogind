@@ -4,14 +4,13 @@ AC_PROG_CC
 
 AC_CHECK_FUNCS([chroot closefrom pstat_getproc setenv setpcred\
                 setproctitle setreuid setresuid strlcpy usrinfo])
-                
-dnl XXX setpcred is in usersec.h, usrinfo is in uinfo.h; check them separately?
 
 
 AC_CHECK_HEADERS([pam/pam_appl.h security/pam_appl.h])
 AC_CHECK_LIB(pam, pam_start,
  [LIBS="$LIBS -lpam"
   AC_DEFINE(HAVE_PAM)])
+AC_CHECK_FUNCS(pam_getenvlist)
 
 AC_CHECK_HEADERS([bsm/audit.h],
  [AC_CHECK_FUNC(setaudit_addr, [],

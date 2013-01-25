@@ -36,10 +36,10 @@ int un_connect(const char* sock);
  * The read functions return -1 (int) or 0 (char*) or failure.
  */
 int write_finish(int fd, int status);
-int write_text(int fd, char* str);
+int write_text(int fd, const char* str);
 int write_prompt(int fd, int echo);
-int write_reply(int fd, char* str);
-int write_str(int fd, char* str);
+int write_reply(int fd, const char* str);
+int write_str(int fd, const char* str);
 int write_uint(int fd, int i);
 int read_msg_type(int fd);
 char* read_reply(int fd);

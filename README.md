@@ -108,9 +108,3 @@ At point (\*\*\*), we switch to an unprivileged uid (daemon account) for reading
 Now the user has authenticated, the main process can do what it needs to do as root, then drop privileges itself to the daemon account or the authenticated user's account. It could transfer the connection to a child spun off from the session process, and remain root as long as it is not interpreting client input through untrusted libraries, or launch another privilege-separated helper.
 
 We will not explore all these options in netlogind. The essential idea is simply that as an example application, our use of the session process design is still applicable to modern application requirements with sophisticated isolation of components in multiple processes.
-
-## Bugs
-
-* Large chunks not yet implemented
-* Doesn't compile on all platforms
-* No timeouts: each user should have a connection limit, and unauthenticated connections should be given only limited time

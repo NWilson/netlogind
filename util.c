@@ -30,6 +30,11 @@
 #include <assert.h>
 #include <errno.h>
 
+#if HAVE_PSTAT_GETPROC
+#include <sys/param.h>
+#include <sys/pstat.h>
+#endif
+
 int debug_ = 0;
 
 void debug(const char* str, ...)
@@ -68,6 +73,7 @@ void setpasswd(struct passwd* pwp)
       initgroups(pwp->pw_name, pwp->pw_gid) ||
       setuid(pwp->pw_uid) < 0)
   {
+    debug("Attempted to switch to user %s(%d)", pwp->pw_name, pwp->pw_uid);
     perror_fatal("user id change failed");
   }
 
@@ -83,6 +89,14 @@ void buffer_scrub(void* buf_, size_t len)
   volatile char* buf = buf_;
   while (len--) *buf++ = '\0';
 }
+
+#if !HAVE_PSIGNAL
+void psignal(int sig, const char *s)
+{
+  if (s && s[0]) fprintf(stderr, "%s: ", s);
+  fprintf(stderr, "%d\n", sig);
+}
+#endif
 
 #if !HAVE_STRLCPY
 size_t
@@ -109,7 +123,7 @@ int setenv(const char *name, const char *value, int overwrite)
 #endif
 
 #if !HAVE_SETPROCTITLE
-// No point emulating; it's just cosmetic
+/* No point emulating; it's just cosmetic */
 void setproctitle(const char* fmt, ...) { }
 #endif
 
@@ -126,15 +140,15 @@ int setreuid(uid_t ruid, uid_t euid)
 #endif
 
 #if !HAVE_CLOSEFROM
-// see http://stackoverflow.com/questions/899038/
+/* see http://stackoverflow.com/questions/899038/ */
 void closefrom(int lowfd)
 {
 #ifdef F_CLOSEM
-  // AIX
+  /* AIX */
   (void)fcntl(lowfd, FCLOSEM, 0);
 
 #elif HAVE_PSTAT_GETPROC
-  // HP-UX
+  /* HP-UX */
   struct pst_status ps;
   if (pstat_getproc(&ps, sizeof(ps), (size_t)0, (int)getpid()) < 0)
     perror("pstat_getproc()");
@@ -142,7 +156,7 @@ void closefrom(int lowfd)
   for (; i <= ps.pst_highestfd; ++i) (void)close(i);
 #else
 
-  // TODO total blinking pain...
+  /* TODO total blinking pain... */
 
 #endif
 }

@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
     debug("Warning: not dropping privileges");
   } else {
 #if HAVE_CHROOT
-    if (chroot(CHROOT_DIR) < 0) perror("chroot()");
+    if (chroot(CHROOT_DIR) < 0) perror("chroot("CHROOT_DIR")");
 #endif
     setpasswd(pwp);
   }

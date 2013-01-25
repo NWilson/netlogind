@@ -103,9 +103,9 @@ static int readbuf_(int fd, void* buf_, int len)
   return 0;
 }
 
-static int writebuf_(int fd, void* buf_, int len)
+static int writebuf_(int fd, const void* buf_, int len)
 {
-  char* buf = (char*)buf_;
+  const char* buf = (const char*)buf_;
   while(len) {
     int err = write(fd, buf, len);
     if (err < 0 && errno == EINTR) continue;
@@ -121,7 +121,7 @@ int write_finish(int fd, int status)
   if (write_uint(fd, MSG_FINISH) < 0) return -1;
   return write_uint(fd, status);
 }
-int write_text(int fd, char* str)
+int write_text(int fd, const char* str)
 {
   if (write_uint(fd, MSG_TEXT) < 0) return -1;
   return write_str(fd, str);
@@ -131,12 +131,12 @@ int write_prompt(int fd, int echo)
   if (write_uint(fd, MSG_PROMPT) < 0) return -1;
   return write_uint(fd, echo);
 }
-int write_reply(int fd, char* str)
+int write_reply(int fd, const char* str)
 {
   if (write_uint(fd, MSG_REPLY) < 0) return -1;
   return write_str(fd, str);
 }
-int write_str(int fd, char* str)
+int write_str(int fd, const char* str)
 {
   size_t len = strlen(str);
   if (len > INT_MAX) len = INT_MAX;
@@ -160,7 +160,7 @@ char* read_str(int fd)
   int len = read_uint(fd);
   if (len < 0) return 0;
   char* buf = malloc(len+1);
-  if (!buf) fatal("malloc()");
+  if (!buf) { fatal("malloc()"); assert(0); }
   buf[len] = '\0';
   if (readbuf_(fd, buf, len) < 0) { free(buf); return 0; }
   return buf;

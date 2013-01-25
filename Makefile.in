@@ -18,11 +18,13 @@ util.c: util.h
 util.h: config.h
 net.c: util.h net.h
 net.h:
-os.c: os.h
+os.c: config.h util.h os.h
 os.h:
-session.c: session.h config.h
+pam.c: pam.h util.h net.h
+pam.h: config.h
+session.c: session.h config.h util.h net.h os.h pam.h
 session.h:
-netlogind.c: util.h net.h os.h session.h
+netlogind.c: config.h util.h net.h os.h session.h
 
 .c.o:
 	$(CC) $(CFLAGS) -c -o $@ $<
