@@ -1,5 +1,5 @@
-Functions performed by `netlogind`
-==================================
+Functions performed by netlogind
+================================
 
 The basic task of a daemon providing logins is to execute one or more commands in the correct context for a user, for that system. This is harder than it seems, given historical requirements derived from terminal logins, and differences in process attributes and credentials between platforms. Different steps must be precisely ordered to ensure correct set-up.
 
@@ -54,7 +54,7 @@ _Call:_ Right after a `setsid`; absolutely not from the same session the daemon 
 
 _Platforms:_ FreeBSD, Mac OS X. Because one uid may have several entries in the password database with different names, `getpwuid(getuid())` mightn't tell you the username that was used to log on, so another function, `getlogin`, has to be provided to do this. The implementation may be done in terms of utmp (unreliable), or `$LOGNAME` (insecure). BSD-derived systems solve the problem in the ideal way by storing a username in the per-session kernel data structure. AIX solves this using `usrinfo` (below)
 
-### `usrinfo`, `setpcred`
+### _AIX:_ `usrinfo`, `setpcred`
 
 On AIX, call `usrinfo(SETUINFO, "LOGIN=<name>\0LOGNAME=<name>\0NAME=<name>\0\0", ...)`. This is similar in function to `setlogin` on BSD-derived systems. Call as root. Some applications apparently require `TERM` to be set too, but there may be no reasonable value to give it.
 
@@ -89,18 +89,18 @@ These functions may be done directly by an application (Screen Sharing) or throu
 
 ### Audit userid
 
-On some kernels, processes maintain an auid, an additional userid which is preserved when the user switches userid using `su(1)`, for example. This permits actions taken to be logged and traced to the user who performed it.
+On some kernels, processes maintain an auid, an additional userid which is preserved when the user switches userid using `su`(1), for example. This permits actions taken to be logged and traced to the user who performed it.
 
 _On Linux:_ The auid is typically set using `pam_loginid`. But, to guarantee it is set even when PAM is not configured correctly, a daemon should write the user's uid to `/proc/self/loginuid` before exec'ing the user's session. The point is that whether or not the sysadmin remembers to add the module to the service's configuration, the kernel still has the field in its process entry, so setting it is not optional. A daemon must attempt to initialise ever uid for the processes it is launching. PAM can be then used to configure the disposition of the service on error, and to interact with user-space components: while the daemon may be lenient, `pam_loginuid` may block the login if, for example, the system administrator wishes to require the user-space auditd to be running.
+
+_See further:_ ["The Linux Audit System, or Who Changed That File?"](http://la-samhna.de/library/audit.html), Rainer Wichmann
 
 _On Solaris, Mac OS X, and FreeBSD:_ The kernel also assigns an auid to processes. It should be set through the BSM audit API (see `setaudit_addr`). The API has some differences on different platforms:
 * Very old platforms, pre-IPv6, use `setaudit`, a narrower variant of the API.
 * Solaris's `auditinfo_addr_t` has no `ai_flags` field. Be aware that setting the four fields in the Solaris documentation will not completely initialise the structure in the OpenBSM implementation. For portability, call `getaddr_info` and then modify the relevant fields.
 * On Mac OS X, the kernel will give you a uniquely-generate session id if the `ai_asid` field is set to `AU_ASSIGN_ASID`. On other platforms, generate one yourself to create a new audit session (eg. `getpid()` or `getsid()`).
 
-_See further:_ ["The Linux Audit System, or Who Changed That File?"](http://la-samhna.de/library/audit.html), Rainer Wichmann
-
-### Solaris `contract(4)`
+### _Solaris:_ `contract`(4)
 
 *Work in progress*
 
@@ -108,7 +108,7 @@ Create a new contract for processes launched from a daemon. otherwise, critical 
 
 _See example:_ ["Creating subprocesses in new contracts on Solaris 10"](http://blog.devork.be/2011/02/creating-subprocesses-in-new-contracts.html), Floris Bruynooghe
 
-### Solaris `project(4)`
+### _Solaris:_ `project`(4)
 
 On Solaris, projects are used to set resource limits for groups of processes. A user session spawned from a daemon should have its project changed from the system project to that of the user.
 
@@ -117,6 +117,6 @@ From [OpenSSH bug #1824](https://bugzilla.mindrot.org/show_bug.cgi?id=1824):
 >  * `getdefaultproj()`: Obtains the default project for the user logging in.
 >  * `setproject()`: Sets the project for the session. Requires special privs (uid=0) or will fail.
 
-### `setusercontext`
+### _BSD:_ `login_cap`
 
 Many of these tasks are factored out of `login(1)` into libutil on BSD systems. See `setusercontext()`, `login_cap`(3) documentation.
