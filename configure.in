@@ -2,8 +2,9 @@ AC_INIT(netlogind.c)
 AC_CONFIG_HEADER(config.h)
 AC_PROG_CC
 
-AC_CHECK_FUNCS([chroot closefrom pstat_getproc setenv setpcred\
-                setproctitle setreuid setresuid strlcpy usrinfo])
+AC_CHECK_FUNCS([chroot closefrom psignal pstat_getproc\
+                setenv setlogin setpcred setproctitle setreuid\
+                setresuid strlcpy usrinfo])
 
 
 AC_CHECK_HEADERS([pam/pam_appl.h security/pam_appl.h])

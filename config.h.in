@@ -31,11 +31,17 @@
 /* Define as 1 if you have closefrom */
 #define HAVE_CLOSEFROM 0
 
+/* Define as 1 if you have psignal */
+#define HAVE_PSIGNAL 0
+
 /* Define as 1 if you have pstat_getproc */
 #define HAVE_PSTAT_GETPROC 0
 
 /* Define as 1 if you have setenv */
 #define HAVE_SETENV 0
+
+/* Define as 1 if you have setlogin */
+#define HAVE_SETLOGIN 0
 
 /* Define as 1 if you have setpcred */
 #define HAVE_SETPCRED 0

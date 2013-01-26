@@ -104,11 +104,16 @@ static void session_environ()
   setenv("USER",pw.pw_name,1);
   setenv("LOGNAME",pw.pw_name,1);
   setenv("LOGIN",pw.pw_name,1); /*< Historical; only strictly needed on AIX */
+  setenv("SHELL", pw.pw_shell[0] ? pw.pw_shell : "/bin/sh",1);
   setenv("PATH",path,1);
   free(path);
 #if HAVE_PAM
   pam_export_environ();
 #endif
+  /* Authentication mechanism other than PAM can also have environment variables
+   * to set too, pointing to cached credentials in /tmp, for example. */
+
+  if (chdir(getenv("HOME")) < 0) perror("chdir($HOME)");
 }
 
 /* The protocol the main thread uses to talk to the session is simple: TEXT is
@@ -172,6 +177,8 @@ int session_main()
     session_fatal("PAM session creation failed");
   }
 #endif
+
+  os_session_post_session(username);
 
   setproctitle("%s [session]", username);
   if (write_finish(session_fd, 0) < 0 ||

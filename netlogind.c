@@ -81,18 +81,18 @@ static void daemon_fatal(const char* fmt, ...)
 }
 
 /*
- * This is a brain-dead simple example of how to start a process from a
- * daemon, as a logged-in user.
+ * This daemon provides sample code for how to start a process from a daemon,
+ * as a logged-in user.
  *
- * The protocol is basic. This is intended as an example of the correct
- * steps to follow, and does not constitute a usable application. Run a
- * proper product, like VNC, if you actually want to log into a machine
+ * The protocol is basic. This is intended as an example of the correct steps
+ * to follow, and does not constitute a usable application. Run a proper
+ * application, like VNC or SSH, if you actually want to log into a machine
  * remotely.
  *
- * It functions, for the purpose of inspecting its workings.
+ * Nonetheless, it does work!
  *
  * Usage: netlogind            - spawn a daemon that listens
- *        netlogind -client    - connect!
+ *        netlogind -client    - connect
  */
 
 int main(int argc, char** argv) {
@@ -138,6 +138,9 @@ int main(int argc, char** argv) {
     sleep(1); /* prevent fork-bomb */
   }
   if (!debug_) {
+    /* This setsid() is important: the child is not in the same session as the
+     * listener parent because we do actually call functions that affect the
+     * whole session before forking again. */
     if (setsid() < 0) perror_fatal("setsid(listener_child)");
     os_daemon_post_fork();
     rv = fork();
@@ -169,9 +172,8 @@ int main(int argc, char** argv) {
   if (rv == 0) return session_main();
   session_pid = rv;
 
-  /* If we need root or user privileges later, we could use
-   * privilege separation here, and drop root after
-   * authentication. */
+  /* If we need root or user privileges later, we could use privilege separation
+   * here, and drop root after authentication. */
 
   struct passwd pw, *pwp;
   char pw_buf[1024];
@@ -226,6 +228,7 @@ int main(int argc, char** argv) {
         char* reply = read_reply(client_fd);
         if (!reply) daemon_fatal("Unexpected disconnection");
         rv = write_reply(session_fd, reply);
+        buffer_scrub(reply, strlen(reply));
         free(reply);
         if (rv < 0) daemon_fatal("Unexpcted disconnection"); 
       }
@@ -238,10 +241,9 @@ int main(int argc, char** argv) {
       if (authenticated) break;
       authenticated = 1;
 
-      /* At this point, if we were doing the privsep design,
-       * we'd rejoin the [net] process, perform whatever action
-       * we were interested in staying root for, then drop
-       * our privileges. */
+      /* At this point, if we were doing the privsep design, we'd rejoin the
+       * [net] process, perform whatever action we were interested in staying
+       * root for, then drop our privileges. */
       setproctitle("%s [net]", daemon_username);
       debug("Session process running for \"%s\"", daemon_username);
     }
@@ -315,6 +317,7 @@ int client_main()
         if (len) str[len-1] = '\0';
         if (write_reply(client_fd, str) < 0)
           client_fatal("Unexpected disconnection");
+        buffer_scrub(buf, sizeof(buf));
       }
       break;
     default:

@@ -50,7 +50,7 @@ void os_session_post_auth(char* username, uid_t uid)
 {
   /* FreeBSD, MacOS X */
 #if HAVE_SETLOGIN
-  if (setlogin(username) < 0) perror("setlogin()");
+  if (setlogin(username) < 0) perror_fatal("setlogin()");
 #endif
 
   /* AIX */
@@ -61,29 +61,29 @@ void os_session_post_auth(char* username, uid_t uid)
   char* buf = malloc(len);
   if (buf) {
     sprintf(buf, fmt, username, username, username);
-    if (usrinfo(SETUINFO, buf, len) < 0) perror("usrinfo(SETUINFO)");
+    if (usrinfo(SETUINFO, buf, len) < 0) perror_fatal("usrinfo(SETUINFO)");
     free(buf);
-  }
+  } else fatal("malloc()");
 #endif
 #if HAVE_SETPCRED
   const char* override[] = { "REAL_USER=root", 0 };
-  if (setpcred(username, override) < 0) perror("setpcred()");
+  if (setpcred(username, override) < 0) perror_fatal("setpcred()");
 #endif
 
   /* Linux */
 #ifdef __linux
-  /* This is ultra-simplistic. Admins who really care about setting the
-   * loginuid should use pam_loginuid, which is more sophisticated in its
-   * handling and communication with auditd. We have to set it here though,
-   * because it's our responsibility to try to correctly set every user-id the
-   * kernel has on us. */
+  /* This is ultra-simplistic. Admins who really care about setting the loginuid
+   * should use pam_loginuid, which is more sophisticated in its handling and
+   * communication with auditd. We have to set it here though, because it's our
+   * responsibility to try to correctly set every user-id the kernel has. */
   FILE* f = fopen("/proc/self/loginuid", "r+");
   if (f) {
-    if (ftruncate(fileno(f), 0) < 0) perror("ftruncate(/proc/self/loginuid)");
-    else fprintf(f, "%lu", (unsigned long)uid);
-    fclose(f);
+    if (ftruncate(fileno(f), 0) < 0)
+      perror_fatal("ftruncate(/proc/self/loginuid)");
+    else if (fprintf(f, "%lu", (unsigned long)uid) < 0 || fclose(f) != 0)
+      perror_fatal("fflush(/proc/self/loginuid)");
   } else {
-    debug("No /proc/self/loginuid");
+    debug("No /proc/self/loginuid; skip setting audituid");
   }
 #endif
 
@@ -91,11 +91,14 @@ void os_session_post_auth(char* username, uid_t uid)
 #if HAVE_BSM_AUDIT_H
   auditinfo_addr_t ai = {0,};
 
-  /* Solaris BSM doesn't have ai_flags, but OpenBSM does. We are just
-   * making sure that if there are fields in the ai structure we don't
-   * know about, we leave them at their current value. */
-  if (getaudit_addr(&ai, sizeof(ai)) < 0)
+  /* Solaris BSM doesn't have ai_flags, but OpenBSM does. We are just making
+   * sure that if there are fields in the ai structure we don't know about, we
+   * leave them at their current value. */
+  if (getaudit_addr(&ai, sizeof(ai)) < 0) {
+    auditinfo_addr_t null = {0,};
+    ai = null;
     perror("getaudit_addr()");
+  }
   ai.ai_auid = uid;
 #ifdef AU_ASSIGN_ASID
   ai.ai_asid = AU_ASSIGN_ASID;
@@ -103,17 +106,39 @@ void os_session_post_auth(char* username, uid_t uid)
   ai.ai_asid = getsid(0);
 #endif
 
-  /* This API is rubbish. It assumes a session represents a connection from
-   * one location; what if two users are cooperating? Stupid API. Don't
-   * use this field for anything unless you're telnet or similar. */
+  /* This API is rubbish. It assumes a session represents a connection from one
+   * location; what if two users are cooperating? Stupid API. Don't use this
+   * field for anything unless you're telnet or similar. */
   au_tid_addr_t termid = {0,};
   ai.ai_termid = termid;
   ai.ai_termid.at_type = AU_IPv4;
 
-  if (au_user_mask(username, &ai.ai_mask) < 0)
-    perror("au_user_mask()");
-  else if (setaudit_addr(&ai, sizeof(ai)) < 0)
-    perror("setaudit_addr()");
+  if (au_user_mask(username, &ai.ai_mask) < 0) {
+    au_mask_t null = {0,};
+    ai.ai_mask = null;
+    perror("au_user_mask()"); /* Should this be fatal? */
+  } else if (setaudit_addr(&ai, sizeof(ai)) < 0)
+    perror_fatal("setaudit_addr()");
+#endif
+
+  /* Solaris 10 */
+#if 0
+  The library calls utilized are:
+
+  - getdefaultproj()
+
+  Obtains the default project for the user logging in.
+
+  - setproject()
+
+  Sets the project for the session. Requires special privs (uid=0) or will fail.
 #endif
 }
 
+void os_session_post_session(char* username)
+{
+#ifdef __linux
+  /* TODO If it wasn't done through PAM, we should double-check that the
+   *      SELinux execution context we're about to use is right. */ 
+#endif
+}

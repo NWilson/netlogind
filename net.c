@@ -162,7 +162,8 @@ char* read_str(int fd)
   char* buf = malloc(len+1);
   if (!buf) { fatal("malloc()"); assert(0); }
   buf[len] = '\0';
-  if (readbuf_(fd, buf, len) < 0) { free(buf); return 0; }
+  if (readbuf_(fd, buf, len) < 0)
+  { buffer_scrub(buf, len); free(buf); return 0; }
   return buf;
 }
 int read_uint(int fd)
