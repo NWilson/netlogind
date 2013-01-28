@@ -36,6 +36,10 @@
 #include <usersec.h>
 #endif
 
+#if HAVE_LIBPROJECT
+#include <project.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -90,6 +94,7 @@ void os_session_post_auth(char* username, uid_t uid)
   /* Solaris, MacOS X, FreeBSD */
 #if HAVE_BSM_AUDIT_H
   auditinfo_addr_t ai = {0,};
+  int audit_enabled = 1;
 
   /* Solaris BSM doesn't have ai_flags, but OpenBSM does. We are just making
    * sure that if there are fields in the ai structure we don't know about, we
@@ -97,7 +102,15 @@ void os_session_post_auth(char* username, uid_t uid)
   if (getaudit_addr(&ai, sizeof(ai)) < 0) {
     auditinfo_addr_t null = {0,};
     ai = null;
-    perror("getaudit_addr()");
+#ifdef __sun
+    if (errno == EINVAL)
+#else
+    if (errno == ENOSYS)
+#endif
+    {
+      debug("Skip setting audit-uid (auditing disabled for system)");
+      audit_enabled = 0;
+    } else perror("getaudit_addr()");
   }
   ai.ai_auid = uid;
 #ifdef AU_ASSIGN_ASID
@@ -113,7 +126,9 @@ void os_session_post_auth(char* username, uid_t uid)
   ai.ai_termid = termid;
   ai.ai_termid.at_type = AU_IPv4;
 
-  if (au_user_mask(username, &ai.ai_mask) < 0) {
+  if (!audit_enabled) {
+    /* */
+  } if (au_user_mask(username, &ai.ai_mask) < 0) {
     au_mask_t null = {0,};
     ai.ai_mask = null;
     perror("au_user_mask()"); /* Should this be fatal? */
@@ -121,24 +136,30 @@ void os_session_post_auth(char* username, uid_t uid)
     perror_fatal("setaudit_addr()");
 #endif
 
-  /* Solaris 10 */
-#if 0
-  The library calls utilized are:
-
-  - getdefaultproj()
-
-  Obtains the default project for the user logging in.
-
-  - setproject()
-
-  Sets the project for the session. Requires special privs (uid=0) or will fail.
-#endif
 }
 
-void os_session_post_session(char* username)
+int os_session_post_session(char* username)
 {
 #ifdef __linux
   /* TODO If it wasn't done through PAM, we should double-check that the
-   *      SELinux execution context we're about to use is right. */ 
+   *      SELinux execution context we're about to use is right. */
 #endif
+
+  /* Solaris 10 */
+#if HAVE_LIBPROJECT
+  char pbuf[5*1024], cbuf[sizeof(pbuf)];
+  projid_t pid = getprojid();
+  if (pid < 0) perror_fatal("getprojid()");
+  struct project proj, *pproj = getprojbyid(pid, &proj, cbuf, sizeof(cbuf));
+  if (!pproj) {
+    perror("Current project not in database. getprojbyid()");
+    return -1;
+  }
+  if (!inproj(username, proj.pj_name, pbuf, sizeof(pbuf))) {
+    fprintf(stderr, "User is not in the current project.\n");
+    return -1;
+  }
+#endif
+
+  return 0;
 }

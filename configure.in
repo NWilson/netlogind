@@ -13,6 +13,8 @@ AC_CHECK_LIB(pam, pam_start,
   AC_DEFINE(HAVE_PAM)])
 AC_CHECK_FUNCS(pam_getenvlist)
 
+AC_CHECK_LIB(project, inproj)
+
 AC_CHECK_HEADERS([bsm/audit.h],
  [AC_CHECK_FUNC(setaudit_addr, [],
   [AC_CHECK_LIB(bsm, setaudit_addr, LIBS="$LIBS -lbsm -lsocket -lnsl -lintl",

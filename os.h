@@ -24,6 +24,6 @@
 
 void os_daemon_post_fork();
 void os_session_post_auth(char* username, uid_t uid);
-void os_session_post_session(char* username);
+int os_session_post_session(char* username);
 
 #endif

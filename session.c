@@ -178,7 +178,10 @@ int session_main()
   }
 #endif
 
-  os_session_post_session(username);
+  if (os_session_post_session(username) < 0) {
+    (void)write_finish(session_fd, 1);
+    session_fatal("Session creation failed");
+  }
 
   setproctitle("%s [session]", username);
   if (write_finish(session_fd, 0) < 0 ||

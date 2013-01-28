@@ -25,6 +25,9 @@
 /* Define as 1 if you have pam_getenvlist */
 #define HAVE_PAM_GETENVLIST 0
 
+/* Define as 1 if you have libproject */
+#define HAVE_LIBPROJECT 0
+
 /* Define as 1 if you have chroot */
 #define HAVE_CHROOT 0
 

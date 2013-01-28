@@ -79,6 +79,8 @@ static void daemon_fatal(const char* fmt, ...)
   va_start(ap, fmt);
   vfatal(fmt, ap);
 }
+static void auth_timeout(int sig)
+{ if (sig == SIGALRM) daemon_fatal("Authentication timeout"); }
 
 /*
  * This daemon provides sample code for how to start a process from a daemon,
@@ -188,6 +190,11 @@ int main(int argc, char** argv) {
     setpasswd(pwp);
   }
 
+  /* Set the auth timeout alarm; this and the sleep(1) above guarantee that
+   * max load on the system from unauthenticated users is 60 processes. */
+  signal(SIGALRM, auth_timeout);
+  alarm(5);
+
   /* Main loop: session-driven */
   int authenticated = 0;
   while(1) {
@@ -230,7 +237,7 @@ int main(int argc, char** argv) {
         rv = write_reply(session_fd, reply);
         buffer_scrub(reply, strlen(reply));
         free(reply);
-        if (rv < 0) daemon_fatal("Unexpcted disconnection"); 
+        if (rv < 0) daemon_fatal("Unexpected disconnection");
       }
       break;
     default:
@@ -244,6 +251,7 @@ int main(int argc, char** argv) {
       /* At this point, if we were doing the privsep design, we'd rejoin the
        * [net] process, perform whatever action we were interested in staying
        * root for, then drop our privileges. */
+      alarm(0);
       setproctitle("%s [net]", daemon_username);
       debug("Session process running for \"%s\"", daemon_username);
     }

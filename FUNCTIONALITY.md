@@ -28,7 +28,7 @@ PAM is used to set up session environment through the `pam_setcred` and `pam_ope
 * There is debate over which order `pam_setcred` and `pam_open_session` should be called in. It seems preferable to invoke `pam_setcred` before `pam_open_session` on most modern platforms, as some modules reasonably require this.[(\*)](http://www.redhat.com/archives/pam-list/2001-November/msg00054.html) However, there are reasons for wanting to order it the other way.[(\*)](https://bugzilla.mindrot.org/show_bug.cgi?id=926#c6) Regardless, the strictest constraint is that Solaris and HP-UX PAM will fail with certain modules unless `pam_setcred` comes second, so there is no much choice on those platforms (that is, you actually have to follow the order documented on those platforms). LinuxPAM's documentation says that `pam_setcred` should come first, the opposite to OpenPAM's documentation.
 * Ordering of `pam_open_session/setcred` relative to forking: fork with care between calling the PAM functions and `setuid`. If calling `fork`, after `pam_open_session` and before `setuid`, guard the fork with a `setresuid(uid,-1,-1)` (or similar) just before the fork and restore the privileged uid just after. This is because `pam_limits` applies resource limits to the calling process based on the real uid. If the target user has a limit applied on the number of processes, but root is already running more than the user is allowed to, the fork will fail because the user's limit is being tested against root's process count.
 * PAM bugs to be aware of: some vendor-supplied modules, eg on HP-UX, do not pass the appdata parameter to the conversation function. For portability, use a static variable instead to avoid relying on the appdata parameter. Other notable real-world compatibility issues: [RedHat #126985](https://bugzilla.redhat.com/show_bug.cgi?id=126985), [RedHat #127054](https://bugzilla.redhat.com/show_bug.cgi?id=127054)
-* The `PAM_TTY` issue on Sun: (eg [OpenSSH #687](https://bugzilla.mindrot.org/show_bug.cgi?id=687), [thread](http://thr3ads.net/openssh-unix-dev/2001/10/1177879-Regarding-PAM_TTY_KLUDGE-and-Solaris-8)). My understanding of the solution is that PAM_TTY should be exposed as a parameter on the relevant systems so users have the power to enable the workaround if they need to.
+* The `PAM_TTY` issue on Sun: (eg [OpenSSH #687](https://bugzilla.mindrot.org/show_bug.cgi?id=687), [thread](http://thr3ads.net/openssh-unix-dev/2001/10/1177879-Regarding-PAM_TTY_KLUDGE-and-Solaris-8)). My understanding of the solution is that PAM_TTY should be exposed as a parameter on the relevant systems so users have the power to enable the workaround if they need to. It is definitely required for `PAM_TTY` to be set to a string beginning with `"/dev/"` on some versions of Solaris, including Solaris 10 in my testing. On Linux, the workaround is only needed to avoid problems in specific modules (eg. `pam_time`).
 * Very nasty issues with `pam_setcred(DELETE_CRED)` on HP-UX and Solaris, where `pam_unix` uses the uid of the process, rather than the `PAM_USER` field. Workaround is to seteuid for that call. HP-UX still spews an unnecessary message in this case about it not being able to delete the user's credentials. All these have specific error messages that can be googled, sadly.
 * There are ruid restrictions on `pam_chauthtok` (AIX requires ruid of 0 on old versions, but matches Solaris behaviour on 5.2+, Solaris requires ruid non-zero or else complexity restrictions are not checked, nor is the user prompted for his old password).
 
@@ -74,6 +74,8 @@ The manpage for Solaris `login` explains that it does not allow certain variable
 
 Setting the SELinux context of the child process is best done through PAM on Linux systems. It usually is achieved through `setexeccon()`, which does not alter the parent process's context, but sets it up to be applied on the next `exec()`. The complication is the the session functionality of some PAM modules is meant to be called under the user's SELinux context, but not for other modules. This requires very careful configuration of the PAM stack. In fact, `pam_selinux` has 'open' and 'close' arguments as a hack to allow its order in the stack to be different when `pam_session_open` and `pam_session_close` are called, precisely because the order is so delicate.
 
+*_TODO_* Work out what's necessary here
+
 An application may still wish to set the execution context itself though, to guarantee that the system context is not passed on to users with a different default context. The API calls in this case would be:
 * `getseuserbyname()` to fetch the SELinux username and level
 * `get_default_context_with_level()` for this user
@@ -112,8 +114,15 @@ _See example:_ ["Creating subprocesses in new contracts on Solaris 10"](http://b
 
 On Solaris, projects are used to set resource limits for groups of processes. A user session spawned from a daemon should have its project changed from the system project to that of the user.
 
-From [OpenSSH bug #1824](https://bugzilla.mindrot.org/show_bug.cgi?id=1824):
-> The library calls utilized are:
+The usual way to accomplish this is with PAM. Sun's `pam_unix_cred` puts the session process into the user's default project; alternatively, `pam_user_project` could be used to create and manage per-user projects on-the-fly.
+
+Therefore, the theory behind netlogind's implementation is that actually performing the project initialisation is best left to the admin's preferred configuration. A daemon need do no more than check the user is allowed to run processes in the project, after PAM session management is complete. This just avoids the case that a misconfigured PAM stack allows a user to chew up unlimited processes in the "system" project.
+
+To do this:
+* Call `getprojid()` then `getprojbyid()` to identify our project.
+* Call `inproj()` to check that continuing with this project is allowed according to the user's privileges.
+
+From [OpenSSH bug #1824](https://bugzilla.mindrot.org/show_bug.cgi?id=1824), the library calls utilized to put a process into a user's default project would be:
 >  * `getdefaultproj()`: Obtains the default project for the user logging in.
 >  * `setproject()`: Sets the project for the session. Requires special privs (uid=0) or will fail.
 

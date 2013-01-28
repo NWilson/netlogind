@@ -44,6 +44,10 @@
 #define SUN_RPC_PAM_BUG
 #endif
 
+#if defined(__sun)
+#define SUN_PAM_TTY_BUG
+#endif
+
 #if defined(_AIX) || defined(__sun)
 /* We need euid root, always, to update unix passwords. On most systems, the
  * ruid doesn't matter.
@@ -144,6 +148,10 @@ int pam_authenticate_session(char** username, int fd)
   int rv;
   if ((rv = pam_start(PAM_APPL_NAME, *username, &conv, &pam_h)) != PAM_SUCCESS)
     fatal("pam_start() failure: %d", rv);
+#ifdef SUN_PAM_TTY_BUG
+  if ((rv = pam_set_item(pam_h, PAM_TTY, "/dev/nld")) != PAM_SUCCESS)
+    fatal("pam_set_item(PAM_TTY,/dev/nld");
+#endif
 
   pam_conv_fd = fd;
   if ((rv = pam_authenticate(pam_h, 0)) != PAM_SUCCESS) {
@@ -211,6 +219,10 @@ int pam_begin_session(const char* username, int fd)
   if (!pam_h &&
       (rv = pam_start(PAM_APPL_NAME, username, &conv, &pam_h)) != PAM_SUCCESS)
     fatal("pam_start() failure: %d", rv);
+#ifdef SUN_PAM_TTY_BUG
+  if ((rv = pam_set_item(pam_h, PAM_TTY, "/dev/nld")) != PAM_SUCCESS)
+    fatal("pam_set_item(PAM_TTY,/dev/nld");
+#endif
 
   conv_reject_prompts = 1;
   pam_conv_fd = fd;
