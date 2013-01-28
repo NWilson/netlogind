@@ -42,6 +42,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 
 void os_daemon_post_fork()
 {

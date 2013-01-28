@@ -193,7 +193,7 @@ int main(int argc, char** argv) {
   /* Set the auth timeout alarm; this and the sleep(1) above guarantee that
    * max load on the system from unauthenticated users is 60 processes. */
   signal(SIGALRM, auth_timeout);
-  alarm(5);
+  alarm(60);
 
   /* Main loop: session-driven */
   int authenticated = 0;
