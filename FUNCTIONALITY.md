@@ -70,11 +70,19 @@ Defaults may be in `/etc/environment`. Remember to read the variables set throug
 
 The manpage for Solaris `login` explains that it does not allow certain variables to be set through PAM: `$SHELL`, `$HOME`, `$LOGNAME`,  `$MAIL`, `$CDPATH`, `$IFS`, and `$PATH`. This is probably sensible, and many other implementations have adopted this. Also, all variables beginning with `"LD_"` are blocked in this and other implementations (including Mac OS X's `login`).
 
+### _Linux:_ cgroups
+
+On systems using cgroups, the user's processes may need to be placed into separate control groups from the daemon.
+
+The API is not easy to use, and it is not clear how this should be done in the general case. If the daemon is being run from systemd, stack the `pam_systemd` module to perform the correct initialisation. Otherwise, ignore the whole mess.
+
 ### SELinux
+
+**Work In Progress** Work out what's necessary here
 
 Setting the SELinux context of the child process is best done through PAM on Linux systems. It usually is achieved through `setexeccon()`, which does not alter the parent process's context, but sets it up to be applied on the next `exec()`. The complication is the the session functionality of some PAM modules is meant to be called under the user's SELinux context, but not for other modules. This requires very careful configuration of the PAM stack. In fact, `pam_selinux` has 'open' and 'close' arguments as a hack to allow its order in the stack to be different when `pam_session_open` and `pam_session_close` are called, precisely because the order is so delicate.
 
-*_TODO_* Work out what's necessary here
+_Call:_ After PAM has had a chance to set up a custom context
 
 An application may still wish to set the execution context itself though, to guarantee that the system context is not passed on to users with a different default context. The API calls in this case would be:
 * `getseuserbyname()` to fetch the SELinux username and level
@@ -83,7 +91,7 @@ An application may still wish to set the execution context itself though, to gua
 
 ### Mach namespace
 
-*Work In Progress*
+**Work In Progress** Needs research! How to launch a GUI session still not worked out.
 
 On Mac OS X, procesess ("tasks") have associated ports, which are similar in some ways to datagram pipes between processes, but operating on a rather different model. A new process does not inherit its parent's ports, except for a few ports associated with special fields. This includes the exception port and bootstrap port. The exception port should be reset so that the Apple crash handler receives core dumps of user processes (this is turned off for daemons). The bootstrap port needs to be carefully set. The bootstrap namespace needs to be carefully set, to associate the process with the correct context.
 
@@ -100,13 +108,15 @@ _See further:_ ["The Linux Audit System, or Who Changed That File?"](http://la-s
 _On Solaris, Mac OS X, and FreeBSD:_ The kernel also assigns an auid to processes. It should be set through the BSM audit API (see `setaudit_addr`). The API has some differences on different platforms:
 * Very old platforms, pre-IPv6, use `setaudit`, a narrower variant of the API.
 * Solaris's `auditinfo_addr_t` has no `ai_flags` field. Be aware that setting the four fields in the Solaris documentation will not completely initialise the structure in the OpenBSM implementation. For portability, call `getaddr_info` and then modify the relevant fields.
-* On Mac OS X, the kernel will give you a uniquely-generate session id if the `ai_asid` field is set to `AU_ASSIGN_ASID`. On other platforms, generate one yourself to create a new audit session (eg. `getpid()` or `getsid()`).
+* Some fields are not relevant for general applications, such as the terminal id. Set this to `AU_IPv4` and 0.0.0.0.
+* On Mac OS X, the kernel will give you a uniquely-generated session id if the `ai_asid` field is set to `AU_ASSIGN_ASID`. On other platforms, generate one yourself to create a new audit session (eg. `getpid()` or `getsid()`).
+* If the audit subsystem is not present, Solaris returns `EINVAL` to BSM calls; on the systems using OpenBSM, it's `ENOSYS` as expected.
 
 ### _Solaris:_ `contract`(4)
 
-*Work in progress*
+**Work in progress**
 
-Create a new contract for processes launched from a daemon. otherwise, critical events in one user's session could result in all users' sessions being killed.
+Create a new contract for processes launched from a daemon. Otherwise, critical events in one user's session could result in all users' sessions being killed.
 
 _See example:_ ["Creating subprocesses in new contracts on Solaris 10"](http://blog.devork.be/2011/02/creating-subprocesses-in-new-contracts.html), Floris Bruynooghe
 
@@ -118,7 +128,7 @@ The usual way to accomplish this is with PAM. Sun's `pam_unix_cred` puts the ses
 
 Therefore, the theory behind netlogind's implementation is that actually performing the project initialisation is best left to the admin's preferred configuration. A daemon need do no more than check the user is allowed to run processes in the project, after PAM session management is complete. This just avoids the case that a misconfigured PAM stack allows a user to chew up unlimited processes in the "system" project.
 
-To do this:
+To do this, after PAM has had a chance to set up a custom project:
 * Call `getprojid()` then `getprojbyid()` to identify our project.
 * Call `inproj()` to check that continuing with this project is allowed according to the user's privileges.
 
@@ -128,4 +138,9 @@ From [OpenSSH bug #1824](https://bugzilla.mindrot.org/show_bug.cgi?id=1824), the
 
 ### _BSD:_ `login_cap`
 
-Many of these tasks are factored out of `login(1)` into libutil on BSD systems. See `setusercontext()`, `login_cap`(3) documentation.
+Many of these tasks are factored out of `login`(1) into libutil on BSD systems. Further, an additional database of per-user limits and environment is kept in `/etc/login.conf` detailing the system's restrictions on user rights, and these limits must be applied.
+
+The login class capabilities database contains information to be acted on in three ways:
+* The basic login class for each user describes, for members of the class, restrictions on their logons. `auth_timeok()` (and, where appropriate, `auth_hostok()` and `auth_ttyok()`) should be respected. For these purposes, fetch the user's login class with `login_getpwclass()`, which uses root's class to override if the uid is zero (this is the case that means fetching class by username alone isn't quite enough), and falls back to the default class nicely.
+* The login class itself can also be queried for specific properties in it (see 'ENVIRONMENT' in `login.conf`(5)). One or two of these look like they may be relevant for certain applications (eg `requirehome`, `ignorenologon`).
+* Finally, the class describes actionable properties for setting up a user's environment and limits. Set these using `setusercontext()`, which can be used to set both environment settings (`LOGIN_SETUMASK|LOGIN_SETPATH|LOGIN_SETENV`) and privileges (`LOGIN_SETRESOURCES|LOGIN_SETPRIORITY|LOGIN_SETMAC|LOGIN_SETCPUMASK`). Note that although it doesn't say so in the documentation, `setusercontext()` ought to be called twice, once before dropping root, and once after dropping root: only if the process's uid is right does the function read settings from the user's configuration (namely `LOGIN_SETRESOURCES`, `LOGIN_SETUMASK`, `LOGIN_SETPATH`, `LOGIN_SETENV`, and `LOGIN_SETCPUMASK`). Note this means that `LOGIN_SETRESOURCES`, `LOGIN_SETCPUMASK` should therefore be set twice, once as root in case the user is allowed higher limits than the daemon, and once afterwards to lower them according the user's own preferences.
