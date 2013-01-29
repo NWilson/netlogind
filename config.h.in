@@ -28,6 +28,9 @@
 /* Define as 1 if you have libproject */
 #define HAVE_LIBPROJECT 0
 
+/* Define as 1 if you have the login capabilities database */
+#define HAVE_LOGIN_CAP 0
+
 /* Define as 1 if you have chroot */
 #define HAVE_CHROOT 0
 

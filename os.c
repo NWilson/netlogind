@@ -139,13 +139,12 @@ void os_session_post_auth(char* username, uid_t uid)
 
 }
 
-int os_session_post_session(char* username)
-{
-#ifdef __linux
-  /* TODO If it wasn't done through PAM, we should double-check that the
-   *      SELinux execution context we're about to use is right. */
+int os_session_post_session(struct passwd* pw
+#if HAVE_LOGIN_CAP
+    , login_cap_t* login_class
 #endif
-
+    )
+{
   /* Solaris 10 */
 #if HAVE_LIBPROJECT
   char pbuf[5*1024], cbuf[sizeof(pbuf)];
@@ -156,8 +155,18 @@ int os_session_post_session(char* username)
     perror("Current project not in database. getprojbyid()");
     return -1;
   }
-  if (!inproj(username, proj.pj_name, pbuf, sizeof(pbuf))) {
+  if (!inproj(pw->pw_name, proj.pj_name, pbuf, sizeof(pbuf))) {
     fprintf(stderr, "User is not in the current project.\n");
+    return -1;
+  }
+#endif
+
+#if HAVE_LOGIN_CAP
+  if (setusercontext(login_class, pw, pw->pw_uid,
+                     LOGIN_SETRESOURCES|LOGIN_SETPRIORITY|
+                     LOGIN_SETMAC|LOGIN_SETCPUMASK) < 0)
+  {
+    perror("setusercontext(limits) failed");
     return -1;
   }
 #endif

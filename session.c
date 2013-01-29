@@ -37,6 +37,12 @@ extern char** environ;
 #include <signal.h>
 #include <assert.h>
 
+#if HAVE_LOGIN_CAP
+#include <login_cap.h>
+#include <time.h>
+static login_cap_t* login_class = 0;
+#endif
+
 pid_t session_pid = -1;
 int session_fd = -1;
 static char* username = 0;
@@ -59,6 +65,10 @@ void session_cleanup()
 
   if (session_fd >= 0 && close(session_fd) < 0) perror("close(session_fd)");
   session_fd = -1;
+
+#if HAVE_LOGIN_CAP
+  login_close(login_class); login_class = 0;
+#endif
 
 #if HAVE_PAM
   /* Give any user daemons (DBus, etc) detached from the session time to quit
@@ -107,11 +117,25 @@ static void session_environ()
   setenv("SHELL", pw.pw_shell[0] ? pw.pw_shell : "/bin/sh",1);
   setenv("PATH",path,1);
   free(path);
+
 #if HAVE_PAM
   pam_export_environ();
 #endif
   /* Authentication mechanism other than PAM can also have environment variables
    * to set too, pointing to cached credentials in /tmp, for example. */
+
+#if HAVE_LOGIN_CAP
+  /* Note we have already done LOGIN_SETRESOURCES, LOGIN_SETCPUMASK. We have
+   * to do them again though after setuid() or the user's personal preferences
+   * won't be read in. We had to do them the first time because the daemon
+   * might be running under reduced limits and we would need to root to raise
+   * the limits back up to the system defaults. */
+  if (setusercontext(login_class, &pw, pw.pw_uid,
+                     LOGIN_SETUMASK|LOGIN_SETPATH|LOGIN_SETENV|
+                     LOGIN_SETRESOURCES|LOGIN_SETCPUMASK).) < 0)
+    perror("setusercontext(env) failed");
+  login_close(login_class); login_class = 0;
+#endif
 
   if (chdir(getenv("HOME")) < 0) perror("chdir($HOME)");
 }
@@ -159,6 +183,19 @@ int session_main()
                        "No matching passwd entry");
   }
 
+#if HAVE_LOGIN_CAP
+  login_class = login_getpwclass(&pw);
+  if (!login_class) {
+    perror("login_getpwclass()");
+    (void)write_finish(session_fd, 1);
+    session_fatal("Login class not found");
+  }
+  if (!auth_timeok(login_class, time(0))) {
+    (void)write_finish(session_fd, 1);
+    session_fatal("Login denied at this time");
+  }
+#endif
+
   /* XXX username was untrusted client input: reject it if it
    *     doesn't match its strvis */
 
@@ -178,7 +215,11 @@ int session_main()
   }
 #endif
 
-  if (os_session_post_session(username) < 0) {
+#if HAVE_LOGIN_CAP
+  if (os_session_post_session(&pw, login_class) < 0) {
+#else
+  if (os_session_post_session(&pw) < 0) {
+#endif
     (void)write_finish(session_fd, 1);
     session_fatal("Session creation failed");
   }

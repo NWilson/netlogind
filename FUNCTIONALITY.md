@@ -78,16 +78,14 @@ The API is not easy to use, and it is not clear how this should be done in the g
 
 ### SELinux
 
-**Work In Progress** Work out what's necessary here
-
 Setting the SELinux context of the child process is best done through PAM on Linux systems. It usually is achieved through `setexeccon()`, which does not alter the parent process's context, but sets it up to be applied on the next `exec()`. The complication is the the session functionality of some PAM modules is meant to be called under the user's SELinux context, but not for other modules. This requires very careful configuration of the PAM stack. In fact, `pam_selinux` has 'open' and 'close' arguments as a hack to allow its order in the stack to be different when `pam_session_open` and `pam_session_close` are called, precisely because the order is so delicate.
 
-_Call:_ After PAM has had a chance to set up a custom context
+Very few applications should therefore try to set the SELinux themselves, and `pam_selinux` is the more recent way to do this, so applications that were prototyped to use SELinux directly in the early days are now moving to PAM. OpenSSH uses SELinux still because it needs to set the security properties on the tty it creates.
 
-An application may still wish to set the execution context itself though, to guarantee that the system context is not passed on to users with a different default context. The API calls in this case would be:
-* `getseuserbyname()` to fetch the SELinux username and level
-* `get_default_context_with_level()` for this user
-* `setexeccon()`
+_See further:_
+* [Fedora wiki, "SELinux/Login"](http://fedoraproject.org/wiki/SELinux/Login)
+* [Stephen Smalley, "Differences between openssh and pam_selinux"](http://lists.fedoraproject.org/pipermail/selinux/2008-May/009419.html)
+* [Luke Leighton, SELinux status in Debian](http://hands.com/~lkcl/selinux/status.current.txt), a helpful overview of difficulties integrating SELinux in specific applications
 
 ### Mach namespace
 

@@ -15,6 +15,10 @@ AC_CHECK_FUNCS(pam_getenvlist)
 
 AC_CHECK_LIB(project, inproj)
 
+AC_CHECK_LIB(util, setusercontext,
+ [LIBS="$LIBS -lutil"
+  AC_DEFINE(HAVE_LOGIN_CAP)])
+
 AC_CHECK_HEADERS([bsm/audit.h],
  [AC_CHECK_FUNC(setaudit_addr, [],
   [AC_CHECK_LIB(bsm, setaudit_addr, LIBS="$LIBS -lbsm -lsocket -lnsl -lintl",

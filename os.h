@@ -20,10 +20,21 @@
 #ifndef OS_H__
 #define OS_H__
 
+#include <config.h>
 #include <unistd.h>
+struct passwd;
+
+#if HAVE_LOGIN_CAP
+#include <sys/types.h>
+#include <login_cap.h>
+#endif
 
 void os_daemon_post_fork();
 void os_session_post_auth(char* username, uid_t uid);
-int os_session_post_session(char* username);
+int os_session_post_session(struct passwd* pw
+#if HAVE_LOGIN_CAP
+    , login_cap_t* login_class
+#endif
+);
 
 #endif

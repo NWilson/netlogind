@@ -19,7 +19,7 @@ util.h: config.h
 net.c: util.h net.h
 net.h:
 os.c: config.h util.h os.h
-os.h:
+os.h: config.h
 pam.c: pam.h util.h net.h
 pam.h: config.h
 session.c: session.h config.h util.h net.h os.h pam.h
