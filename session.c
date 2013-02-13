@@ -132,7 +132,7 @@ static void session_environ()
    * the limits back up to the system defaults. */
   if (setusercontext(login_class, &pw, pw.pw_uid,
                      LOGIN_SETUMASK|LOGIN_SETPATH|LOGIN_SETENV|
-                     LOGIN_SETRESOURCES|LOGIN_SETCPUMASK).) < 0)
+                     LOGIN_SETRESOURCES|LOGIN_SETCPUMASK) < 0)
     perror("setusercontext(env) failed");
   login_close(login_class); login_class = 0;
 #endif
