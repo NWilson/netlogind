@@ -1,6 +1,8 @@
 netlogind
 =========
 
+[![Build Status](https://travis-ci.org/NWilson/netlogind.svg?branch=master)](https://travis-ci.org/NWilson/netlogind)
+
 ### A test-harness, cross-platform, login daemon
 
 ## Purpose
